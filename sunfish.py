@@ -14,7 +14,7 @@ import pyximport
 import numpy as np
 pyximport.install(setup_args={"include_dirs":np.get_include()},
                   reload_support=True)
-from testing import testing
+from minimax import *
 
 
 # The table size is the maximum number of elements in the transposition table.
@@ -50,6 +50,7 @@ initial = (
 mapping = { '.': 0, 
             'p': 1, 'n': 2, 'b': 3, 'r': 4, 'q': 5, 'k': 6,
             'P': 7, 'N': 8, 'B': 9, 'R': 10, 'Q': 11, 'K': 12 }
+pos_values = np.array([0, 1, 3, 3, 5, 10, 1000, -1, -3, -3, -5, -10, -1000]).astype(np.int32)
 
 ###############################################################################
 # Move and evaluation tables
@@ -382,10 +383,8 @@ def print_pos(pos):
 def main():
     pos = Position(initial, 0, (True,True), (True,True), 0, 0)
     while True:
-        testing(pos.numpyify())
-        print_pos(pos)
-        # testing()
-        # raw_input()
+        result = score_board(pos.numpyify(), pos_values)
+        # print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
         while move not in pos.gen_moves():
