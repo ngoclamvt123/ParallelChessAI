@@ -20,6 +20,9 @@ from minimax import *
 # The table size is the maximum number of elements in the transposition table.
 TABLE_SIZE = 1e6
 
+# This is the max depth we want our minimax to search
+DEPTH = 4
+
 # This constant controls how much time we spend on looking for optimal moves.
 NODES_SEARCHED = 1e4
 
@@ -383,8 +386,6 @@ def print_pos(pos):
 def main():
     pos = Position(initial, 0, (True,True), (True,True), 0, 0)
     while True:
-        result = score_board(pos.numpyify(), pos_values)
-        # print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
         while move not in pos.gen_moves():
@@ -400,14 +401,24 @@ def main():
         # This allows us to see the effect of our move.
         print_pos(pos.rotate())
 
+        # Here is our first attempt at a minimax algorithm tree. 
+        temp = float("-inf")
+        bestAction = None
+        for move in pos.gen_moves():
+            new_value = minimax_helper(pos.move(move), 1, DEPTH, pos_values)
+            if new_value > temp or not bestAction:
+                bestAction = move
+                temp = new_value
+
+        move = bestAction
         # Fire up the engine to look for a move.
-        move, score = search(pos)
-        if score <= -MATE_VALUE:
-            print("You won")
-            break
-        if score >= MATE_VALUE:
-            print("You lost")
-            break
+        #move, score = search(pos)
+        # if score <= -MATE_VALUE:
+        #     print("You won")
+        #     break
+        # if score >= MATE_VALUE:
+        #     print("You lost")
+        #     break
 
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
