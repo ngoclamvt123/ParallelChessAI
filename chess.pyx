@@ -426,7 +426,7 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		for i in range(moves.shape[0]):
 			move = moves[i]
 			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos, move)), 1, depth - 1))
-			return bestValue
+		return bestValue
 	# Agend index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
 		bestValue = 1000000
@@ -434,7 +434,7 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		for i in range(moves.shape[0]):
 			move = moves[i]
 			bestValue = min(bestValue, minimax_helper(rotate(make_move(pos, move)), 0, depth -1))
-			return bestValue
+		return bestValue
 
 
 	

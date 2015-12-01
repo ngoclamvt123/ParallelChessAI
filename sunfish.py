@@ -22,7 +22,7 @@ import chess
 TABLE_SIZE = 1e6
 
 # This is the max depth we want our minimax to search
-DEPTH = 1
+DEPTH = 2
 
 # This constant controls how much time we spend on looking for optimal moves.
 NODES_SEARCHED = 1e4
