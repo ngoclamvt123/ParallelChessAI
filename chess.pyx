@@ -50,7 +50,7 @@ cdef enum:
 	MAXINT = 999999
 	MAX_MOVES = 140
 
-npdirections = np.array([
+np_directions = np.array([
 		   [ N, 2*N, N+W, N+E, MAXINT, MAXINT, MAXINT, MAXINT], # Pawn
 		   [ 2*N+E, N+2*E, S+2*E, 2*S+E, 2*S+W, S+2*W, N+2*W, 2*N+W], # Knight
 		   [ N+E, S+E, S+W, N+W, MAXINT, MAXINT, MAXINT, MAXINT], # Bishop
@@ -59,73 +59,73 @@ npdirections = np.array([
 		   [ N, E, S, W, N+E, S+E, S+W, N+W ]
 		], dtype=np.int32) # King
 
+np_pst_vals = np.array([
+	# Pawn
+	[0,  0,  0,  0,  0,  0,  0,  0,
+	50, 50, 50, 50, 50, 50, 50, 50,
+	10, 10, 20, 30, 30, 20, 10, 10,
+	 5,  5, 10, 25, 25, 10,  5,  5,
+	 0,  0,  0, 20, 20,  0,  0,  0,
+	 5, -5,-10,  0,  0,-10, -5,  5,
+	 5, 10, 10,-20,-20, 10, 10,  5,
+	 0,  0,  0,  0,  0,  0,  0,  0],
+	# Knight
+	[-50,-40,-30,-30,-30,-30,-40,-50,
+	-40,-20,  0,  0,  0,  0,-20,-40,
+	-30,  0, 10, 15, 15, 10,  0,-30,
+	-30,  5, 15, 20, 20, 15,  5,-30,
+	-30,  0, 15, 20, 20, 15,  0,-30,
+	-30,  5, 10, 15, 15, 10,  5,-30,
+	-40,-20,  0,  5,  5,  0,-20,-40,
+	-50,-40,-30,-30,-30,-30,-40,-50],
+	# Bishop
+	[-20,-10,-10,-10,-10,-10,-10,-20,
+	-10,  0,  0,  0,  0,  0,  0,-10,
+	-10,  0,  5, 10, 10,  5,  0,-10,
+	-10,  5,  5, 10, 10,  5,  5,-10,
+	-10,  0, 10, 10, 10, 10,  0,-10,
+	-10, 10, 10, 10, 10, 10, 10,-10,
+	-10,  5,  0,  0,  0,  0,  5,-10,
+	-20,-10,-10,-10,-10,-10,-10,-20],
+	# Rook
+	[ 0,  0,  0,  0,  0,  0,  0,  0,
+	  5, 10, 10, 10, 10, 10, 10,  5,
+	 -5,  0,  0,  0,  0,  0,  0, -5,
+	 -5,  0,  0,  0,  0,  0,  0, -5,
+	 -5,  0,  0,  0,  0,  0,  0, -5,
+	 -5,  0,  0,  0,  0,  0,  0, -5,
+	 -5,  0,  0,  0,  0,  0,  0, -5,
+	  0,  0,  0,  5,  5,  0,  0,  0],
+	# Queen
+	[-20,-10,-10, -5, -5,-10,-10,-20,
+	-10,  0,  0,  0,  0,  0,  0,-10,
+	-10,  0,  5,  5,  5,  5,  0,-10,
+	 -5,  0,  5,  5,  5,  5,  0, -5,
+	  0,  0,  5,  5,  5,  5,  0, -5,
+	-10,  5,  5,  5,  5,  5,  0,-10,
+	-10,  0,  5,  0,  0,  0,  0,-10,
+	-20,-10,-10, -5, -5,-10,-10,-20],
+	# King
+	[-30,-40,-40,-50,-50,-40,-40,-30,
+	-30,-40,-40,-50,-50,-40,-40,-30,
+	-30,-40,-40,-50,-50,-40,-40,-30,
+	-30,-40,-40,-50,-50,-40,-40,-30,
+	-20,-30,-30,-40,-40,-30,-30,-20,
+	-10,-20,-20,-20,-20,-20,-20,-10,
+	 20, 20,  0,  0,  0,  0, 20, 20,
+	 20, 30, 10,  0,  0, 10, 30, 20]
+], dtype=np.int32)
+
 empty_moves = np.array([[0, 0]] * MAX_MOVES)
 
 cdef:
-	np.int32_t[:, :] directions = npdirections
+	np.int32_t[:, :] directions = np_directions
 	# 20,000 cutoff value derived by Claude Shannon
 	np.int32_t[:] piece_vals = np.array([
 		100, 320, 330, 500, 900, 20000], dtype=np.int32
 	)
 
-	np.int32_t[:, :] pst_vals = \
-		np.ndarray(shape=(6,8), dtype=np.int32, buffer=np.array([
-			# Pawn
-			[0,  0,  0,  0,  0,  0,  0,  0,
-			50, 50, 50, 50, 50, 50, 50, 50,
-			10, 10, 20, 30, 30, 20, 10, 10,
-			 5,  5, 10, 25, 25, 10,  5,  5,
-			 0,  0,  0, 20, 20,  0,  0,  0,
-			 5, -5,-10,  0,  0,-10, -5,  5,
-			 5, 10, 10,-20,-20, 10, 10,  5,
-			 0,  0,  0,  0,  0,  0,  0,  0],
-			# Knight
-			[-50,-40,-30,-30,-30,-30,-40,-50,
-			-40,-20,  0,  0,  0,  0,-20,-40,
-			-30,  0, 10, 15, 15, 10,  0,-30,
-			-30,  5, 15, 20, 20, 15,  5,-30,
-			-30,  0, 15, 20, 20, 15,  0,-30,
-			-30,  5, 10, 15, 15, 10,  5,-30,
-			-40,-20,  0,  5,  5,  0,-20,-40,
-			-50,-40,-30,-30,-30,-30,-40,-50],
-			# Bishop
-			[-20,-10,-10,-10,-10,-10,-10,-20,
-			-10,  0,  0,  0,  0,  0,  0,-10,
-			-10,  0,  5, 10, 10,  5,  0,-10,
-			-10,  5,  5, 10, 10,  5,  5,-10,
-			-10,  0, 10, 10, 10, 10,  0,-10,
-			-10, 10, 10, 10, 10, 10, 10,-10,
-			-10,  5,  0,  0,  0,  0,  5,-10,
-			-20,-10,-10,-10,-10,-10,-10,-20],
-			# Rook
-			[ 0,  0,  0,  0,  0,  0,  0,  0,
-			  5, 10, 10, 10, 10, 10, 10,  5,
-			 -5,  0,  0,  0,  0,  0,  0, -5,
-			 -5,  0,  0,  0,  0,  0,  0, -5,
-			 -5,  0,  0,  0,  0,  0,  0, -5,
-			 -5,  0,  0,  0,  0,  0,  0, -5,
-			 -5,  0,  0,  0,  0,  0,  0, -5,
-			  0,  0,  0,  5,  5,  0,  0,  0],
-			# Queen
-			[-20,-10,-10, -5, -5,-10,-10,-20,
-			-10,  0,  0,  0,  0,  0,  0,-10,
-			-10,  0,  5,  5,  5,  5,  0,-10,
-			 -5,  0,  5,  5,  5,  5,  0, -5,
-			  0,  0,  5,  5,  5,  5,  0, -5,
-			-10,  5,  5,  5,  5,  5,  0,-10,
-			-10,  0,  5,  0,  0,  0,  0,-10,
-			-20,-10,-10, -5, -5,-10,-10,-20],
-			# King
-			[-30,-40,-40,-50,-50,-40,-40,-30,
-			-30,-40,-40,-50,-50,-40,-40,-30,
-			-30,-40,-40,-50,-50,-40,-40,-30,
-			-30,-40,-40,-50,-50,-40,-40,-30,
-			-20,-30,-30,-40,-40,-30,-30,-20,
-			-10,-20,-20,-20,-20,-20,-20,-10,
-			 20, 20,  0,  0,  0,  0, 20, 20,
-			 20, 30, 10,  0,  0, 10, 30, 20]
-			])
-		)
+	np.int32_t[:, :] pst_vals = np_pst_vals
 
 	# Endgame
 	np.int32_t[:] king_end = np.array(
@@ -250,7 +250,6 @@ cpdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 
 				j += d
 
-    # return filter(lambda (x, y): x != 0 and y != 0, result)
 	return result[:arr_idx]
 
 
@@ -271,7 +270,7 @@ cdef inline Position rotate(Position pos) nogil:
 		if pos.board[i] >= 0:
 			new_pos.board[i] = (pos.board[i] + 6) % 12
 
-	new_pos.board[::-1]
+	new_pos.board = new_pos.board[::-1]
 	new_pos.score = pos.score * -1
 	new_pos.ep = 119-pos.ep
 	new_pos.kp = 119-pos.kp
@@ -287,21 +286,15 @@ cpdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 		# Grab source and destination of move
 		i = move[0]
 		j = move[1]
-		print("There")
 		piece = pos.board[i]
 		dest = pos.board[j]
-		print("There1")
 
 		# Create copy of variables and apply 
 		new_pos.board = pos.board.copy()
-		print("There1.1")
 		new_pos.wc = pos.wc.copy()
-		print("There1.3")
 		new_pos.bc = pos.bc.copy()
-		print("There1.6")
 		new_pos.ep = 0
 		new_pos.kp = 0
-		print("There2")
 		new_pos.board[j] = pos.board[i]
 		new_pos.board[i] = empty
 
@@ -380,28 +373,31 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 		if piece >= 0:
 			row = idx / 10 - 2
 			col = idx % 10 - 1
-			pos = row * 10 + col
+			pos = row * 8 + col
 
-			# My piece
+			# opponent's piece
 			if piece <= 5:
-				score += piece_vals[piece]
+				pos = 63 - pos
+
+				score -= piece_vals[piece]
 
 				if endgame_bool == 1:
-					if piece == 0: score += pawn_end[pos]
-					elif piece == 5: score += king_end[pos]
-					else: score += pst_vals[piece][pos]
+					if piece == 0: score -= pawn_end[pos]
+					elif piece == 5: score -= king_end[pos]
+					else: score -= pst_vals[piece][pos]
 				else:
-					score += pst_vals[piece][pos]
+					score -= pst_vals[piece][pos]
 
+			# my piece
 			else:
-				score -= piece_vals[piece % 6]
+				score += piece_vals[piece % 6]
 
 				if endgame_bool == 1:
-					if piece == 6: score -= pawn_end[pos]
-					elif piece == 11: score -= king_end[pos]
-					else: score -= pst_vals[piece % 6][pos]
+					if piece == 6: score += pawn_end[pos]
+					elif piece == 11: score += king_end[pos]
+					else: score += pst_vals[piece % 6][pos]
 				else:
-					score -= pst_vals[piece % 6][pos]
+					score += pst_vals[piece % 6][pos]
 
 	return score
 
@@ -412,13 +408,17 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	cdef:
 		np.int32_t[:] move
 		np.int32_t[:,:] moves
-		int i
+		int i, ret, bestValue
 
 	if depth == 0:
 		if agentIndex == 0:
-			return evaluate(pos.board)
+			ret = evaluate(pos.board)
+			# with gil: print ("agent 0 ", ret)
+			return -1 * ret
 		else:
-			return -1 * evaluate(pos.board)
+			ret = evaluate(pos.board)
+			# with gil: print ("agent 1 ", ret)
+			return ret
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	if agentIndex == 0:
 		bestValue = -100000
@@ -426,17 +426,15 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		for i in range(moves.shape[0]):
 			move = moves[i]
 			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos, move)), 1, depth - 1))
-
+			return bestValue
 	# Agend index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
-		with gil:
-			print("Got here")
 		bestValue = 1000000
 		moves = gen_moves(pos)
 		for i in range(moves.shape[0]):
 			move = moves[i]
 			bestValue = min(bestValue, minimax_helper(rotate(make_move(pos, move)), 0, depth -1))
-
+			return bestValue
 
 
 	

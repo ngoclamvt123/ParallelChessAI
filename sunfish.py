@@ -22,7 +22,7 @@ import chess
 TABLE_SIZE = 1e6
 
 # This is the max depth we want our minimax to search
-DEPTH = 4
+DEPTH = 1
 
 # This constant controls how much time we spend on looking for optimal moves.
 NODES_SEARCHED = 1e4
@@ -179,44 +179,6 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             self.bc, self.wc, 119-self.ep, 119-self.kp)
 
     def move(self, move):
-        # i, j = move
-        # p, q = self.board[i], self.board[j]
-        # put = lambda board, i, p: board[:i] + p + board[i+1:]
-        
-        # # Copy variables and reset ep and kp
-        # board = self.board
-        # wc, bc, ep, kp = self.wc, self.bc, 0, 0
-        # score = self.score + self.value(move)
-        
-        # # Actual move
-        # board = put(board, j, board[i])
-        # board = put(board, i, '.')
-        
-        # # Castling rights
-        # if i == A1: wc = (False, wc[1])
-        # if i == H1: wc = (wc[0], False)
-        # if j == A8: bc = (bc[0], False)
-        # if j == H8: bc = (False, bc[1])
-        
-        # # Castling
-        # if p == 'K':
-        #     wc = (False, False)
-        #     if abs(j-i) == 2:
-        #         kp = (i+j)//2
-        #         board = put(board, A1 if j < i else H1, '.')
-        #         board = put(board, kp, 'R')
-        
-        # # Special pawn stuff
-        # if p == 'P':
-        #     if A8 <= j <= H8:
-        #         board = put(board, j, 'Q')
-        #     if j - i == 2*N:
-        #         ep = i + N
-        #     if j - i in (N+W, N+E) and q == '.':
-        #         board = put(board, j+S, '.')
-        
-        # # We rotate the returned position, so it's ready for the next player
-        # return Position(board, score, wc, bc, ep, kp).rotate()
         args = {
             'board': self.numpyify(), 
             'wc': np.array(self.wc).astype(np.uint8), 
@@ -225,9 +187,7 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             'kp': self.kp,
             'score': self.score
         }
-        print("Here")
         pos = chess.make_move(args, np.array(move).astype(np.int32))
-        print("Herenot gonna work")
         return Position(self.stringify(pos['board']), pos['score'], tuple(map(lambda x: bool(x), pos['wc'])), tuple(map(lambda x: bool(x), pos['bc'])), pos['ep'], pos['kp'])
 
     def value(self, move):
@@ -260,106 +220,6 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
     def stringify(self, np_board):
         return ''.join(map(lambda c: int_map[c], np_board))
 
-Entry = namedtuple('Entry', 'depth score gamma move')
-tp = OrderedDict()
-
-
-###############################################################################
-# Search logic
-###############################################################################
-
-nodes = 0
-def bound(pos, gamma, depth):
-    """ returns s(pos) <= r < gamma    if s(pos) < gamma
-        returns s(pos) >= r >= gamma   if s(pos) >= gamma """
-    global nodes; nodes += 1
-
-    # Look in the table if we have already searched this position before.
-    # We use the table value if it was done with at least as deep a search
-    # as ours, and the gamma value is compatible.
-    entry = tp.get(pos)
-    if entry is not None and entry.depth >= depth and (
-            entry.score < entry.gamma and entry.score < gamma or
-            entry.score >= entry.gamma and entry.score >= gamma):
-        return entry.score
-
-    # Stop searching if we have won/lost.
-    if abs(pos.score) >= MATE_VALUE:
-        return pos.score
-
-    # Null move. Is also used for stalemate checking
-    nullscore = -bound(pos.rotate(), 1-gamma, depth-3) if depth > 0 else pos.score
-    #nullscore = -MATE_VALUE*3 if depth > 0 else pos.score
-    if nullscore >= gamma:
-        return nullscore
-
-    # We generate all possible, pseudo legal moves and order them to provoke
-    # cuts. At the next level of the tree we are going to minimize the score.
-    # This can be shown equal to maximizing the negative score, with a slightly
-    # adjusted gamma value.
-    best, bmove = -3*MATE_VALUE, None
-    for move in sorted(pos.gen_moves(), key=pos.value, reverse=True):
-        # We check captures with the value function, as it also contains ep and kp
-        if depth <= 0 and pos.value(move) < 150:
-            break
-        score = -bound(pos.move(move), 1-gamma, depth-1)
-        if score > best:
-            best = score
-            bmove = move
-        if score >= gamma:
-            break
-
-    # If there are no captures, or just not any good ones, stand pat
-    if depth <= 0 and best < nullscore:
-        return nullscore
-    # Check for stalemate. If best move loses king, but not doing anything
-    # would save us. Not at all a perfect check.
-    if depth > 0 and best <= -MATE_VALUE and nullscore > -MATE_VALUE:
-        best = 0
-
-    # We save the found move together with the score, so we can retrieve it in
-    # the play loop. We also trim the transposition table in FILO order.
-    # We prefer fail-high moves, as they are the ones we can build our pv from.
-    if entry is None or depth >= entry.depth and best >= gamma:
-        tp[pos] = Entry(depth, best, gamma, bmove)
-        if len(tp) > TABLE_SIZE:
-            tp.popitem()
-    return best
-
-
-def search(pos, maxn=NODES_SEARCHED):
-    """ Iterative deepening MTD-bi search """
-    global nodes; nodes = 0
-
-    # We limit the depth to some constant, so we don't get a stack overflow in
-    # the end game.
-    for depth in range(1, 99):
-        # The inner loop is a binary search on the score of the position.
-        # Inv: lower <= score <= upper
-        # However this may be broken by values from the transposition table,
-        # as they don't have the same concept of p(score). Hence we just use
-        # 'lower < upper - margin' as the loop condition.
-        lower, upper = -3*MATE_VALUE, 3*MATE_VALUE
-        while lower < upper - 3:
-            gamma = (lower+upper+1)//2
-            score = bound(pos, gamma, depth)
-            if score >= gamma:
-                lower = score
-            if score < gamma:
-                upper = score
-
-        # We stop deepening if the global N counter shows we have spent too
-        # long, or if we have already won the game.
-        if nodes >= maxn or abs(score) >= MATE_VALUE:
-            break
-
-    # If the game hasn't finished we can retrieve our move from the
-    # transposition table.
-    entry = tp.get(pos)
-    if entry is not None:
-        return entry.move, score
-    return None, score
-
 
 ###############################################################################
 # User interface
@@ -390,16 +250,11 @@ def print_pos(pos):
 
 
 def main():
-    print("Here0")
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
-        print("Here1")
         print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
-        print("Here2")
-        print (pos.gen_moves())
-        print("Here3")
         while move not in pos.gen_moves():
             match = re.match('([a-h][1-8])'*2, input('Your move: '))
             if match:
@@ -407,47 +262,39 @@ def main():
             else:
                 # Inform the user when invalid input (e.g. "help") is entered
                 print("Please enter a move like g8f6")
-        print (move)
-        print("Here4")
         pos = pos.move(move)
 
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
+        pos = pos.rotate()
         print_pos(pos.rotate())
 
         # Here is our first attempt at a minimax algorithm tree. 
         temp = float("-inf")
         bestAction = None
         for move in pos.gen_moves():
-            pos = pos.move(move)
+            new_pos = pos.move(move)
+            new_pos.rotate()
             args = {
-                'board': pos.numpyify(), 
-                'wc': np.array(pos.wc).astype(np.uint8), 
-                'bc': np.array(pos.bc).astype(np.uint8), 
-                'ep': pos.ep, 
-                'kp': pos.kp,
-                'score': pos.score
+                'board': new_pos.numpyify(), 
+                'wc': np.array(new_pos.wc).astype(np.uint8), 
+                'bc': np.array(new_pos.bc).astype(np.uint8), 
+                'ep': new_pos.ep, 
+                'kp': new_pos.kp,
+                'score': new_pos.score
             }
-            pos.rotate()
-            new_value = chess.minimax_helper(pos.move(move), 1, DEPTH)
+            new_value = chess.minimax_helper(args, 1, DEPTH)
             if new_value > temp or not bestAction:
                 bestAction = move
                 temp = new_value
 
         move = bestAction
-        # Fire up the engine to look for a move.
-        #move, score = search(pos)
-        # if score <= -MATE_VALUE:
-        #     print("You won")
-        #     break
-        # if score >= MATE_VALUE:
-        #     print("You lost")
-        #     break
 
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
         print("My move:", render(119-move[0]) + render(119-move[1]))
         pos = pos.move(move)
+        pos = pos.rotate()
 
 
 if __name__ == '__main__':
