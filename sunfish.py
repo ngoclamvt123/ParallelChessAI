@@ -168,7 +168,7 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             'kp': self.kp,
             'score': self.score
         }
-        return chess.gen_moves(args)
+        return map(lambda x: tuple(x), chess.gen_moves(args))
 
     def rotate(self):
         return Position(
@@ -393,7 +393,7 @@ def main():
 
         # We query the user until she enters a legal move.
         move = None
-        print (list(pos.gen_moves()))
+        print (pos.gen_moves())
         while move not in pos.gen_moves():
             match = re.match('([a-h][1-8])'*2, input('Your move: '))
             if match:

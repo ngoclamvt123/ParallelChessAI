@@ -1,7 +1,7 @@
 #cython: boundscheck=False, wraparound=False
 
-cimport numpy as np
 import numpy as np
+cimport numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t
 cimport cython
@@ -48,6 +48,7 @@ cdef enum:
 
 	MAX_DIRS = 8
 	MAXINT = 999999
+	MAX_MOVES = 140
 
 npdirections = np.array([
 		   [ N, 2*N, N+W, N+E, MAXINT, MAXINT, MAXINT, MAXINT], # Pawn
@@ -57,6 +58,8 @@ npdirections = np.array([
 		   [ N, E, S, W, N+E, S+E, S+W, N+W], # Queen
 		   [ N, E, S, W, N+E, S+E, S+W, N+W ]
 		], dtype=np.int32) # King
+
+empty_moves = np.array([[0, 0]] * MAX_MOVES)
 
 cdef:
 	np.int32_t[:, :] directions = npdirections
@@ -167,12 +170,14 @@ cpdef gen_moves(Position pos):
 	cdef:
 		int i, j, k
 		np.int32_t d, piece, dest
-		# np.int32_t [:] result = np.array([], dtype = np.int32)
+		np.int32_t arr_idx = 0
+		np.int32_t[:, :] result = np.array([[0, 0]] * MAX_MOVES, dtype=np.int32)
+		# np.int32_t[:] result = np.array([[]], dtype = np.int32)
 	# For each of our pieces, iterate through each possible 'ray' of moves,
 	# as defined in the 'directions' map. The rays are broken e.g. by
 	# captures or immediately in case of pieces such as knights.
 
-	result = []
+	# result = []
 	with nogil:
 		for i in range(n):
 			piece = pos.board[i]
@@ -197,12 +202,19 @@ cpdef gen_moves(Position pos):
 
 					# Castling
 					if i == A1 and dest == self_king and pos.wc[0]:
-						with gil:
-							result.append((j, j-2))
+						result[arr_idx, 0] = j
+						result[arr_idx, 1] = j-2
+						arr_idx += 1
+						# with gil:
+						# 	result.append((j, j-2))
 
 					if i == H1 and dest == self_king and pos.wc[1]:
-						with gil:
-							result.append((j, j+2))
+						# result[arr_idx] = np.array([j, j+2])
+						result[arr_idx, 0] = j
+						result[arr_idx, 1] = j+2
+						arr_idx += 1						
+						# with gil:
+						# 	result.append((j, j+2))
 
 					# No friendly captures
 					if dest >= self_pawn:
@@ -219,8 +231,12 @@ cpdef gen_moves(Position pos):
 						break
 
 					# Move it
-					with gil:
-						result.append((i, j))
+					# result[arr_idx] = np.array([i, j])
+					result[arr_idx, 0] = i
+					result[arr_idx, 1] = j
+					arr_idx += 1
+					# with gil:
+					# 	result.append((i, j))
 
 					# Stop crawlers from sliding
 					if piece in (self_pawn, self_knight, self_king):
@@ -232,7 +248,8 @@ cpdef gen_moves(Position pos):
 
 					j += d
 
-	return result
+    # return filter(lambda (x, y): x != 0 and y != 0, result)
+	return result[:arr_idx]
 
 cdef inline void rotate(Position pos) nogil:
 	
@@ -305,7 +322,7 @@ cpdef Position make_move(Position pos, np.int32_t[:] move):
 			new_pos.board[j+S] = empty
 
 	# Return result
-	new_pos.score = score + evaluate(new_pos.board)
+	new_pos.score = pos.score + evaluate(new_pos.board)
 	rotate(new_pos)
 	return new_pos
 
@@ -332,7 +349,7 @@ cdef np.int32_t is_endgame(np.int32_t[:] board) nogil:
 	return ret_val
 
 
-cpdef np.int32_t evaluate(np.int32_t[:] board) nogil:
+cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 	cdef:
 		np.int32_t score = 0
 		np.int32_t row, col, pos, piece, endgame_bool, idx
