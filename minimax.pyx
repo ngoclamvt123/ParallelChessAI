@@ -4,13 +4,8 @@ import numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t
 cimport cython
+from chess cimport *
 
-cpdef void testing(np.int32_t[:, :] board) nogil:
-	with gil:
-		print(np.array_str(board))
-		print("ayy")
-		print("HEYY")
-		raw_input()
 
 cpdef int score_board(np.int32_t[:, :] board, np.int32_t[:] pos_values) nogil:
 	cdef:
@@ -22,23 +17,25 @@ cpdef int score_board(np.int32_t[:, :] board, np.int32_t[:] pos_values) nogil:
 				total += pos_values[board[i][j]]
 	return total
 
-cpdef int minimax_helper(curr_position, int agentIndex, int depth, np.int32_t[:] pos_values) nogil:
+cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
-	with gil:
-		if depth == 0:
-			return score_board(curr_position.numpyify(), pos_values)
-		# Agent index 0 is the computer, trying to maximize the scoreboard
+	if depth == 0:
 		if agentIndex == 0:
-			bestValue = float("-inf")
-			for move in curr_position.gen_moves():
-				bestValue = max(bestValue, minimax_helper(curr_position.move(move).rotate(), 1, depth -1, pos_values))
+			return evaluate(pos.board)
+		else:
+			return -1 * evaluate(pos.board)
+	# Agent index 0 is the computer, trying to maximize the scoreboard
+	if agentIndex == 0:
+		bestValue = float("-inf")
+		for move in gen_moves(pos.board):
+			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos.board)), 1, depth -1))
 
-		# Agend index 1 is the human, trying to minimize the scoreboard
-		elif agentIndex == 1:
-			bestValue = float("inf")
-			for move in curr_position.gen_moves():
-				bestValue = min(bestValue, minimax_helper(curr_position.move(move).rotate(), 0, depth -1, pos_values))
+	# Agend index 1 is the human, trying to minimize the scoreboard
+	elif agentIndex == 1:
+		bestValue = float("inf")
+		for move in gen_moves(pos.board):
+			bestValue = min(bestValue, minimax_helper(rotate(make_move(pos.board)), 0, depth -1, pos_values))
 
 
 

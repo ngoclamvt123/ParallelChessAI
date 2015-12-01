@@ -14,7 +14,8 @@ import pyximport
 import numpy as np
 pyximport.install(setup_args={"include_dirs":np.get_include()},
                   reload_support=True)
-from minimax import *
+import chess
+# from minimax import *
 
 
 # The table size is the maximum number of elements in the transposition table.
@@ -50,11 +51,13 @@ initial = (
 )
 
 # Integer mapping for converting board to numpy array
-mapping = { '.': 0, 
-            'p': 1, 'n': 2, 'b': 3, 'r': 4, 'q': 5, 'k': 6,
-            'P': 7, 'N': 8, 'B': 9, 'R': 10, 'Q': 11, 'K': 12 }
-pos_values = np.array([0, 1, 3, 3, 5, 10, 1000, -1, -3, -3, -5, -10, -1000]).astype(np.int32)
+char_map = { '\n': -3, ' ': -2, '.': -1, 
+            'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5,
+            'P': 6, 'N': 7, 'B': 8, 'R': 9, 'Q': 10, 'K': 11 }
 
+int_map = { -3: '\n', -2: ' ', -1: '.',
+            0: 'p', 1: 'n', 2: 'b', 3: 'r', 4: 'q', 5: 'k',
+            6: 'P', 7: 'N', 8: 'B', 9: 'R', 10: 'Q', 11: 'K' }
 ###############################################################################
 # Move and evaluation tables
 ###############################################################################
@@ -68,7 +71,6 @@ directions = {
     'Q': (N, E, S, W, N+E, S+E, S+W, N+W),
     'K': (N, E, S, W, N+E, S+E, S+W, N+W)
 }
-
 pst = {
     'P': (0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -160,31 +162,16 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
     """
 
     def gen_moves(self):
-        # For each of our pieces, iterate through each possible 'ray' of moves,
-        # as defined in the 'directions' map. The rays are broken e.g. by
-        # captures or immediately in case of pieces such as knights.
-        for i, p in enumerate(self.board):
-            if not p.isupper(): continue
-            for d in directions[p]:
-                for j in count(i+d, d):
-                    q = self.board[j]
-                    # Stay inside the board
-                    if self.board[j].isspace(): break
-                    # Castling
-                    if i == A1 and q == 'K' and self.wc[0]: yield (j, j-2)
-                    if i == H1 and q == 'K' and self.wc[1]: yield (j, j+2)
-                    # No friendly captures
-                    if q.isupper(): break
-                    # Special pawn stuff
-                    if p == 'P' and d in (N+W, N+E) and q == '.' and j not in (self.ep, self.kp): break
-                    if p == 'P' and d in (N, 2*N) and q != '.': break
-                    if p == 'P' and d == 2*N and (i < A1+N or self.board[i+N] != '.'): break
-                    # Move it
-                    yield (i, j)
-                    # Stop crawlers from sliding
-                    if p in ('P', 'N', 'K'): break
-                    # No sliding after captures
-                    if q.islower(): break
+        # Call cython function to generate moves
+        args = {
+            'board': self.numpyify(), 
+            'wc': np.array(self.wc).astype(np.uint8), 
+            'bc': np.array(self.bc).astype(np.uint8), 
+            'ep': self.ep, 
+            'kp': self.kp,
+            'score': self.score
+        }
+        return chess.gen_moves(args)
 
     def rotate(self):
         return Position(
@@ -192,38 +179,56 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             self.bc, self.wc, 119-self.ep, 119-self.kp)
 
     def move(self, move):
-        i, j = move
-        p, q = self.board[i], self.board[j]
-        put = lambda board, i, p: board[:i] + p + board[i+1:]
-        # Copy variables and reset ep and kp
-        board = self.board
-        wc, bc, ep, kp = self.wc, self.bc, 0, 0
-        score = self.score + self.value(move)
-        # Actual move
-        board = put(board, j, board[i])
-        board = put(board, i, '.')
-        # Castling rights
-        if i == A1: wc = (False, wc[1])
-        if i == H1: wc = (wc[0], False)
-        if j == A8: bc = (bc[0], False)
-        if j == H8: bc = (False, bc[1])
-        # Castling
-        if p == 'K':
-            wc = (False, False)
-            if abs(j-i) == 2:
-                kp = (i+j)//2
-                board = put(board, A1 if j < i else H1, '.')
-                board = put(board, kp, 'R')
-        # Special pawn stuff
-        if p == 'P':
-            if A8 <= j <= H8:
-                board = put(board, j, 'Q')
-            if j - i == 2*N:
-                ep = i + N
-            if j - i in (N+W, N+E) and q == '.':
-                board = put(board, j+S, '.')
-        # We rotate the returned position, so it's ready for the next player
-        return Position(board, score, wc, bc, ep, kp).rotate()
+        # i, j = move
+        # p, q = self.board[i], self.board[j]
+        # put = lambda board, i, p: board[:i] + p + board[i+1:]
+        
+        # # Copy variables and reset ep and kp
+        # board = self.board
+        # wc, bc, ep, kp = self.wc, self.bc, 0, 0
+        # score = self.score + self.value(move)
+        
+        # # Actual move
+        # board = put(board, j, board[i])
+        # board = put(board, i, '.')
+        
+        # # Castling rights
+        # if i == A1: wc = (False, wc[1])
+        # if i == H1: wc = (wc[0], False)
+        # if j == A8: bc = (bc[0], False)
+        # if j == H8: bc = (False, bc[1])
+        
+        # # Castling
+        # if p == 'K':
+        #     wc = (False, False)
+        #     if abs(j-i) == 2:
+        #         kp = (i+j)//2
+        #         board = put(board, A1 if j < i else H1, '.')
+        #         board = put(board, kp, 'R')
+        
+        # # Special pawn stuff
+        # if p == 'P':
+        #     if A8 <= j <= H8:
+        #         board = put(board, j, 'Q')
+        #     if j - i == 2*N:
+        #         ep = i + N
+        #     if j - i in (N+W, N+E) and q == '.':
+        #         board = put(board, j+S, '.')
+        
+        # # We rotate the returned position, so it's ready for the next player
+        # return Position(board, score, wc, bc, ep, kp).rotate()
+        args = {
+            'board': self.numpyify(), 
+            'wc': np.array(self.wc).astype(np.uint8), 
+            'bc': np.array(self.bc).astype(np.uint8), 
+            'ep': self.ep, 
+            'kp': self.kp,
+            'score': self.score
+        }
+        
+        pos = chess.make_move(args, np.array(move).astype(np.int32))
+
+        return Position(self.stringify(pos['board']), pos['score'], tuple(map(lambda x: bool(x), pos['wc'])), tuple(map(lambda x: bool(x), pos['bc'])), pos['ep'], pos['kp'])
 
     def value(self, move):
         i, j = move
@@ -250,9 +255,10 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
 
     def numpyify(self):
         # convert board to numpy array
-        str_board = self.board.strip().split('\n ')
-        int_board = map(lambda row: map(lambda c: mapping[c], row), str_board)
-        return np.array(int_board).astype(np.int32)
+        return np.array(map(lambda c: char_map[c], self.board)).astype(np.int32)
+
+    def stringify(self, np_board):
+        return ''.join(map(lambda c: int_map[c], np_board))
 
 Entry = namedtuple('Entry', 'depth score gamma move')
 tp = OrderedDict()
@@ -384,10 +390,12 @@ def print_pos(pos):
 
 
 def main():
-    pos = Position(initial, 0, (True,True), (True,True), 0, 0)
+    pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
+        print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
+        print (list(pos.gen_moves()))
         while move not in pos.gen_moves():
             match = re.match('([a-h][1-8])'*2, input('Your move: '))
             if match:
@@ -395,6 +403,7 @@ def main():
             else:
                 # Inform the user when invalid input (e.g. "help") is entered
                 print("Please enter a move like g8f6")
+        print (move)
         pos = pos.move(move)
 
         # After our move we rotate the board and print it again.
@@ -405,7 +414,16 @@ def main():
         temp = float("-inf")
         bestAction = None
         for move in pos.gen_moves():
-            new_value = minimax_helper(pos.move(move), 1, DEPTH, pos_values)
+            pos = pos.move(move)
+            args = {
+                'board': pos.numpyify(), 
+                'wc': np.array(pos.wc).astype(np.uint8), 
+                'bc': np.array(pos.bc).astype(np.uint8), 
+                'ep': pos.ep, 
+                'kp': pos.kp,
+                'score': pos.score
+            }
+            new_value = chess.minimax_helper(pos.move(move), 1, DEPTH)
             if new_value > temp or not bestAction:
                 bestAction = move
                 temp = new_value
