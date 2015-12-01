@@ -166,7 +166,7 @@ ctypedef struct Position:
 # Chess logic
 ###############################################################################
 
-cpdef gen_moves(Position pos):
+cpdef np.int32_t[:, :] gen_moves(Position pos):
 	cdef:
 		int i, j, k
 		np.int32_t d, piece, dest
