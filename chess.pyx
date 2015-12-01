@@ -1,7 +1,7 @@
 #cython: boundscheck=False, wraparound=False
 
-cimport numpy as np
 import numpy as np
+cimport numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t
 cimport cython
@@ -48,6 +48,7 @@ cdef enum:
 
 	MAX_DIRS = 8
 	MAXINT = 999999
+	MAX_MOVES = 140
 
 npdirections = np.array([
 		   [ N, 2*N, N+W, N+E, MAXINT, MAXINT, MAXINT, MAXINT], # Pawn
@@ -57,6 +58,8 @@ npdirections = np.array([
 		   [ N, E, S, W, N+E, S+E, S+W, N+W], # Queen
 		   [ N, E, S, W, N+E, S+E, S+W, N+W ]
 		], dtype=np.int32) # King
+
+empty_moves = np.array([[0, 0]] * MAX_MOVES)
 
 cdef:
 	np.int32_t[:, :] directions = npdirections
@@ -163,151 +166,184 @@ ctypedef struct Position:
 # Chess logic
 ###############################################################################
 
-cpdef gen_moves(Position pos):
+cpdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 	cdef:
 		int i, j, k
 		np.int32_t d, piece, dest
-		# np.int32_t [:] result = np.array([], dtype = np.int32)
+		np.int32_t arr_idx = 0
+		np.int32_t[:, :] result 
+
+	with gil:
+		result = np.array([[0, 0]] * MAX_MOVES, dtype=np.int32)
+		# np.int32_t[:] result = np.array([[]], dtype = np.int32)
 	# For each of our pieces, iterate through each possible 'ray' of moves,
 	# as defined in the 'directions' map. The rays are broken e.g. by
 	# captures or immediately in case of pieces such as knights.
 
-	result = []
-	with nogil:
-		for i in range(n):
-			piece = pos.board[i]
+	# result = []
+	for i in range(n):
+		piece = pos.board[i]
 
-			# skip if this piece does not belong to player of interest
-			if piece < self_pawn:
-				continue
+		# skip if this piece does not belong to player of interest
+		if piece < self_pawn:
+			continue
 
-			for k in range(MAX_DIRS):
-				d = directions[piece % pieces, k]
-				if d == MAXINT:
+		for k in range(MAX_DIRS):
+			d = directions[piece % pieces, k]
+			if d == MAXINT:
+				break
+
+			j = i+d
+
+			while True:
+				dest = pos.board[j]
+
+				# Stay inside the board
+				if dest == nline or dest == space:
 					break
 
-				j = i+d
+				# Castling
+				if i == A1 and dest == self_king and pos.wc[0]:
+					result[arr_idx, 0] = j
+					result[arr_idx, 1] = j-2
+					arr_idx += 1
+					# with gil:
+					# 	result.append((j, j-2))
 
-				while True:
-					dest = pos.board[j]
+				if i == H1 and dest == self_king and pos.wc[1]:
+					# result[arr_idx] = np.array([j, j+2])
+					result[arr_idx, 0] = j
+					result[arr_idx, 1] = j+2
+					arr_idx += 1						
+					# with gil:
+					# 	result.append((j, j+2))
 
-					# Stay inside the board
-					if dest == nline or dest == space:
-						break
+				# No friendly captures
+				if dest >= self_pawn:
+					break
 
-					# Castling
-					if i == A1 and dest == self_king and pos.wc[0]:
-						with gil:
-							result.append((j, j-2))
+				# Pawn promotion
+				if piece == self_pawn and d in (N+W, N+E) and dest == empty and j not in (pos.ep, pos.kp):
+					break
 
-					if i == H1 and dest == self_king and pos.wc[1]:
-						with gil:
-							result.append((j, j+2))
+				if piece == self_pawn and d in (N, 2*N) and dest != empty:
+					break
 
-					# No friendly captures
-					if dest >= self_pawn:
-						break
+				if piece == self_pawn and d == 2*N and (i < A1+N or pos.board[i+N] != empty):
+					break
 
-					# Pawn promotion
-					if piece == self_pawn and d in (N+W, N+E) and dest == empty and j not in (pos.ep, pos.kp):
-						break
+				# Move it
+				# result[arr_idx] = np.array([i, j])
+				result[arr_idx, 0] = i
+				result[arr_idx, 1] = j
+				arr_idx += 1
+				# with gil:
+				# 	result.append((i, j))
 
-					if piece == self_pawn and d in (N, 2*N) and dest != empty:
-						break
+				# Stop crawlers from sliding
+				if piece in (self_pawn, self_knight, self_king):
+					break
 
-					if piece == self_pawn and d == 2*N and (i < A1+N or pos.board[i+N] != empty):
-						break
+				# No sliding after captures
+				if dest >= opp_pawn and dest < self_pawn:
+					break
 
-					# Move it
-					with gil:
-						result.append((i, j))
+				j += d
 
-					# Stop crawlers from sliding
-					if piece in (self_pawn, self_knight, self_king):
-						break
+    # return filter(lambda (x, y): x != 0 and y != 0, result)
+	return result[:arr_idx]
 
-					# No sliding after captures
-					if dest >= opp_pawn and dest < self_pawn:
-						break
 
-					j += d
-
-	return result
-
-cdef inline void rotate(Position pos) nogil:
+cdef inline Position rotate(Position pos) nogil:
 	
-	cdef int i
+	cdef:
+		int i
+		Position new_pos
+
+	with gil:
+		new_pos.board = pos.board.copy()
+		new_pos.wc = pos.wc.copy()
+		new_pos.bc = pos.bc.copy()
+	new_pos.ep = 0
+	new_pos.kp = 0
 
 	for i in range(n):
 		if pos.board[i] >= 0:
-			pos.board[i] = (pos.board[i] + 6) % 12
+			new_pos.board[i] = (pos.board[i] + 6) % 12
 
-	pos.board[::-1]
-	pos.score *= -1
-	pos.ep = 119-pos.ep
-	pos.kp = 119-pos.kp
+	new_pos.board[::-1]
+	new_pos.score = pos.score * -1
+	new_pos.ep = 119-pos.ep
+	new_pos.kp = 119-pos.kp
 
-cpdef Position make_move(Position pos, np.int32_t[:] move):
+	return new_pos
+
+cpdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 	cdef:
 		np.int32_t i, j, piece, dest
 		Position new_pos
 
-	# Grab source and destination of move
-	i = move[0]
-	j = move[1]
+	with gil:
+		# Grab source and destination of move
+		i = move[0]
+		j = move[1]
+		print("There")
+		piece = pos.board[i]
+		dest = pos.board[j]
+		print("There1")
 
-	piece = pos.board[i]
-	dest = pos.board[j]
+		# Create copy of variables and apply 
+		new_pos.board = pos.board.copy()
+		print("There1.1")
+		new_pos.wc = pos.wc.copy()
+		print("There1.3")
+		new_pos.bc = pos.bc.copy()
+		print("There1.6")
+		new_pos.ep = 0
+		new_pos.kp = 0
+		print("There2")
+		new_pos.board[j] = pos.board[i]
+		new_pos.board[i] = empty
 
-	# Create copy of variables and apply move
-	new_pos.board = pos.board.copy()
-	new_pos.wc = pos.wc.copy()
-	new_pos.bc = pos.bc.copy()
-	new_pos.ep = 0
-	new_pos.kp = 0
+		# Castling rights
+		if i == A1:
+			new_pos.wc[0] = 0
+			new_pos.wc[1] = pos.wc[1]
 
-	new_pos.board[j] = pos.board[i]
-	new_pos.board[i] = empty
+		if i == H1:
+			new_pos.wc[0] = pos.wc[0]
+			new_pos.wc[1] = 0
 
-	# Castling rights
-	if i == A1:
-		new_pos.wc[0] = 0
-		new_pos.wc[1] = pos.wc[1]
+		if j == A8:
+			new_pos.bc[0] = pos.bc[0]
+			new_pos.bc[1] = 0
 
-	if i == H1:
-		new_pos.wc[0] = pos.wc[0]
-		new_pos.wc[1] = 0
+		if j == H8:
+			new_pos.wc[0] = 0
+			new_pos.bc[1] = pos.bc[1]
 
-	if j == A8:
-		new_pos.bc[0] = pos.bc[0]
-		new_pos.bc[1] = 0
+		# Castling
+		if piece == self_king:
+			new_pos.wc[0] = 0
+			new_pos.wc[1] = 0
+			if abs(j-i) == 2:
+				new_pos.kp = (i+j)//2
+				new_pos.board[A1 if j < i else H1] = empty
+				new_pos.board[new_pos.kp] = self_rook
 
-	if j == H8:
-		new_pos.wc[0] = 0
-		new_pos.bc[1] = pos.bc[1]
+		# Pawn promotion
+		if piece == self_pawn:
+			if A8 <= j and j <= H8:
+				new_pos.board[j] = self_queen
+			if j - i == 2*N:
+				ep = i + N
+			if j - i in (N+W, N+E) and dest == empty:
+				new_pos.board[j+S] = empty
 
-	# Castling
-	if piece == self_king:
-		new_pos.wc[0] = 0
-		new_pos.wc[1] = 0
-		if abs(j-i) == 2:
-			new_pos.kp = (i+j)//2
-			new_pos.board[A1 if j < i else H1] = empty
-			new_pos.board[new_pos.kp] = self_rook
-
-	# Pawn promotion
-	if piece == self_pawn:
-		if A8 <= j and j <= H8:
-			new_pos.board[j] = self_queen
-		if j - i == 2*N:
-			ep = i + N
-		if j - i in (N+W, N+E) and dest == empty:
-			new_pos.board[j+S] = empty
-
-	# Return result
-	new_pos.score = pos.score + evaluate(new_pos.board)
-	rotate(new_pos)
-	return new_pos
+		# Return result
+		new_pos.score = pos.score + evaluate(new_pos.board)
+		rotate(new_pos)
+		return new_pos
 
 cdef np.int32_t total_material(np.int32_t[:] board) nogil:
 	cdef:
@@ -373,6 +409,11 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
+	cdef:
+		np.int32_t[:] move
+		np.int32_t[:,:] moves
+		int i
+
 	if depth == 0:
 		if agentIndex == 0:
 			return evaluate(pos.board)
@@ -380,15 +421,21 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			return -1 * evaluate(pos.board)
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	if agentIndex == 0:
-		bestValue = float("-inf")
-		for move in gen_moves(pos.board):
-			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos.board)), 1, depth - 1))
+		bestValue = -100000
+		moves = gen_moves(pos)
+		for i in range(moves.shape[0]):
+			move = moves[i]
+			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos, move)), 1, depth - 1))
 
 	# Agend index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
-		bestValue = float("inf")
-		for move in gen_moves(pos.board):
-			bestValue = min(bestValue, minimax_helper(rotate(make_move(pos.board)), 0, depth -1, pos_values))
+		with gil:
+			print("Got here")
+		bestValue = 1000000
+		moves = gen_moves(pos)
+		for i in range(moves.shape[0]):
+			move = moves[i]
+			bestValue = min(bestValue, minimax_helper(rotate(make_move(pos, move)), 0, depth -1))
 
 
 

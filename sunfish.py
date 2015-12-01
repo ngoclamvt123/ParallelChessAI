@@ -171,7 +171,7 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             'kp': self.kp,
             'score': self.score
         }
-        return chess.gen_moves(args)
+        return map(lambda x: tuple(x), chess.gen_moves(args))
 
     def rotate(self):
         return Position(
@@ -225,9 +225,9 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             'kp': self.kp,
             'score': self.score
         }
-        
+        print("Here")
         pos = chess.make_move(args, np.array(move).astype(np.int32))
-
+        print("Herenot gonna work")
         return Position(self.stringify(pos['board']), pos['score'], tuple(map(lambda x: bool(x), pos['wc'])), tuple(map(lambda x: bool(x), pos['bc'])), pos['ep'], pos['kp'])
 
     def value(self, move):
@@ -390,12 +390,16 @@ def print_pos(pos):
 
 
 def main():
+    print("Here0")
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
+        print("Here1")
         print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
-        print (list(pos.gen_moves()))
+        print("Here2")
+        print (pos.gen_moves())
+        print("Here3")
         while move not in pos.gen_moves():
             match = re.match('([a-h][1-8])'*2, input('Your move: '))
             if match:
@@ -404,6 +408,7 @@ def main():
                 # Inform the user when invalid input (e.g. "help") is entered
                 print("Please enter a move like g8f6")
         print (move)
+        print("Here4")
         pos = pos.move(move)
 
         # After our move we rotate the board and print it again.
@@ -423,6 +428,7 @@ def main():
                 'kp': pos.kp,
                 'score': pos.score
             }
+            pos.rotate()
             new_value = chess.minimax_helper(pos.move(move), 1, DEPTH)
             if new_value > temp or not bestAction:
                 bestAction = move
