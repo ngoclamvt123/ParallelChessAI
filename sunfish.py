@@ -15,10 +15,11 @@ import numpy as np
 pyximport.install(setup_args={"include_dirs":np.get_include()},
                   reload_support=True)
 import chess
+import time
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 4
+DEPTH = 3
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -159,7 +160,7 @@ def main():
         # This allows us to see the effect of our move.
         print_pos(pos)
         pos = pos.rotate()
-
+        t0 = time.time()
         # Here is our first attempt at a minimax algorithm tree. 
         alpha = -1000000
         bestValue = float("-inf")
@@ -176,7 +177,8 @@ def main():
                 'kp': new_pos.kp,
                 'score': new_pos.score
             }
-            new_value = chess.AlphaBeta(args, 1, DEPTH, alpha, 100000)
+            #new_value = chess.AlphaBeta(args, 1, DEPTH, alpha, 100000)
+            new_value = chess.minimax_helper(args, 1, DEPTH)
             print(new_value)
             print("____________")
             if new_value > bestValue or not bestAction:
@@ -184,7 +186,9 @@ def main():
                 bestValue = new_value
                 alpha = max(alpha, new_value)
         move = bestAction
-
+        t1 = time.time() - t0
+        print("Time to move")
+        print(str(t1))
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
         print("My move:", render(119-move[0]) + render(119-move[1]))

@@ -17,7 +17,11 @@ from cython.parallel import parallel, prange
 ###############################################################################
 # Globals
 ###############################################################################
+cdef:
+	# Eval count
+	int EVALCOUNT
 cdef enum:
+
 	# Board length
 	n = 120
 
@@ -373,6 +377,8 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 		np.int32_t score = 0
 		np.int32_t row, col, pos, piece, endgame_bool, idx
 	endgame_bool = is_endgame(board)
+	global EVALCOUNT
+	EVALCOUNT += 1
 	for idx in range(120):
 		piece = board[idx]
 		
@@ -409,6 +415,8 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 
 
 cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
+	with gil:
+		print(EVALCOUNT)
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
@@ -420,18 +428,18 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		if agentIndex == 0:
 			ret = evaluate(pos.board)
 			#with gil: print ("agent 0 ", ret)
-			with gil:
-				print_numpy(pos.board)
-				print (ret)
-				print ("----------")
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("----------")
 			return ret
 		else:
 			ret = evaluate(pos.board)
 			# with gil: print ("agent 1 ", ret)
-			with gil:
-				print_numpy(pos.board)
-				print (ret)
-				print ("-----------")
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("-----------")
 			return -1 * ret
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	if agentIndex == 0:
@@ -483,57 +491,67 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 			return -1 * ret
 
 	# An attempt at parallelization!
-	elif depth == 1:
-		# Assumes it is an odd depth to start with
-		# agentIndex 1 right now
-		omp_init_lock(eval_lock)
-		#v = 100000
-		moves = gen_moves(pos)
-		num_moves = moves.shape[0]
-		temp = <int *> malloc(sizeof(int) * num_moves)
+	# elif depth == 1:
+	# 	# Assumes it is an even depth to start with
+	# 	# agentIndex 0 right now
+	# 	omp_init_lock(eval_lock)
+	# 	v = -100000
+	# 	moves = gen_moves(pos)
+	# 	num_moves = moves.shape[0]
+	# 	temp = <int *> malloc(sizeof(int) * num_moves)
 
-		for i in prange(num_moves, num_threads = 4, nogil=True):
-			j = evaluate(rotate(make_move(pos, moves[i])).board)
-			temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
-			#omp_set_lock(eval_lock)
-			#omp_unset_lock(eval_lock)
+	# 	for i in prange(num_moves, num_threads = 15, nogil=True):
+	# 		# Check if we actually need to evaluate this
+	# 		j = evaluate(rotate(make_move(pos, moves[i])).board)
+	# 		#with gil:
+	# 		#	print j
+	# 		#omp_set_lock(eval_lock)
+	# 		if (-1 * j) > beta:
+	# 			#with gil:
+	# 			#	print ("########")
+	# 			return -1 * j
+	# 		#omp_unset_lock(eval_lock)
+	# 		temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
+
 		
-		if agentIndex == 1:
-			v = 10000
-			for i in range(num_moves):
-				#with gil:
-					#print(temp[i])
-				v = min(
-					v,
-					temp[i]
-				)
-			#Too negative for max to allow this
-				if v < alpha:
-					return v
-				beta = min(beta, v)
+	# 	# if agentIndex == 1:
+	# 	# 	v = 10000
+	# 	# 	for i in range(num_moves):
+	# 	# 		#with gil:
+	# 	# 			#print(temp[i])
+	# 	# 		v = min(
+	# 	# 			v,
+	# 	# 			temp[i]
+	# 	# 		)
+	# 	# 	#Too negative for max to allow this
+	# 	# 		if v < alpha:
+	# 	# 			return v
+	# 	# 		beta = min(beta, v)
 
-		elif agentIndex == 0:
-			v = -10000
-			for i in range(num_moves):
-				v = max(
-					v,
-					-1 * temp[i]
-				)
-				with gil:
-					print(v)
-				# Prune the rest of the children, don't need to look
-				if v > beta:
-					with gil:
-						print("#########")
-					return v
-				alpha = max(alpha, v)
+	# 	# elif agentIndex == 0:
+	# 	# 	v = -10000
+	# 	for i in range(num_moves):
+	# 		#with gil:
+	# 		#	print("Here")
+	# 		v = max(
+	# 			v,
+	# 			-1 * temp[i]
+	# 		)
+	# 		#with gil:
+	# 		#	print(v)
+	# 	# 		# Prune the rest of the children, don't need to look
+	# 	# 		if v > beta:
+	# 	# 			with gil:
+	# 	# 				print("#########")
+	# 	#return v
+	# 	# 		alpha = max(alpha, v)
 
-		#omp_destroy_lock(eval_lock)
-		#free(<omp_lock_t *> eval_lock)
-		with gil:
-			print("-----------")
-		free(temp)
-		return v
+	# 	#omp_destroy_lock(eval_lock)
+	# 	#free(<omp_lock_t *> eval_lock)
+	# 	#with gil:
+	# 	#	print("-----------")
+	# 	free(temp)
+	# 	return v
 
 	# Agent 0 is the computer, trying to maximize
 	elif agentIndex == 0:
