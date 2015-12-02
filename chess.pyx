@@ -4,7 +4,9 @@ import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t
+from libc.stdlib cimport malloc, free
 cimport cython
+from cython.operator cimport dereference as deref
 
 ###############################################################################
 # Globals
@@ -152,8 +154,6 @@ cdef:
 		dtype = np.int32
 	)
 
-
-
 ctypedef struct Position:
 	np.int32_t[:] board
 	np.uint8_t[:] wc
@@ -162,11 +162,49 @@ ctypedef struct Position:
 	np.int32_t kp
 	np.int32_t score
 
+cdef Position *init_position(np.int32_t[:] board,
+							np.uint8_t[:] wc,
+							np.uint8_t[:] bc,
+							np.int32_t ep,
+							np.int32_t kp,
+							np.int32_t score) nogil:
+	with gil:
+		print("Here4")
+	cdef Position *pos = <Position *> malloc(sizeof(Position))
+	
+	with gil:
+		print("Here5")
+
+	with gil:
+		print("Here6")
+	pos.board = board
+	with gil:
+		print("Here7")
+	pos.wc = wc
+	pos.bc = bc
+	pos.ep = ep
+	pos.kp = kp
+	pos.score = score
+
+	return pos
+
+cdef void delete_position(Position *pos) nogil:
+	free(pos)
+
 ###############################################################################
 # Chess logic
 ###############################################################################
 
-cpdef np.int32_t[:, :] gen_moves(Position pos) nogil:
+# Python wrapper for gen_moves
+cpdef np.int32_t[:, :] _gen_moves(Position pos) nogil:
+	cdef: 
+		np.int32_t[:, :] moves
+
+	moves = gen_moves(&pos)
+
+	return moves
+
+cdef np.int32_t[:, :] gen_moves(Position* pos) nogil:
 	cdef:
 		int i, j, k
 		np.int32_t d, piece, dest
@@ -253,34 +291,41 @@ cpdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 	return result[:arr_idx]
 
 
-cdef inline Position rotate(Position pos) nogil:
+cdef inline void rotate(Position* pos) nogil:
 	
 	cdef:
 		int i
-		Position new_pos
-
-	with gil:
-		new_pos.board = pos.board.copy()
-		new_pos.wc = pos.wc.copy()
-		new_pos.bc = pos.bc.copy()
-	new_pos.ep = 0
-	new_pos.kp = 0
 
 	for i in range(n):
 		if pos.board[i] >= 0:
-			new_pos.board[i] = (pos.board[i] + 6) % 12
+			pos.board[i] = (pos.board[i] + 6) % 12
 
-	new_pos.board = new_pos.board[::-1]
-	new_pos.score = pos.score * -1
-	new_pos.ep = 119-pos.ep
-	new_pos.kp = 119-pos.kp
+	pos.board = pos.board[::-1]
+	pos.score = pos.score * -1
+	pos.ep = 119-pos.ep
+	pos.kp = 119-pos.kp
 
-	return new_pos
+# Python wrapper for make_move
+cpdef Position _make_move(Position pos, np.int32_t[:] move) nogil:
+	cdef: 
+		Position* result_ptr
+		Position result
 
-cpdef Position make_move(Position pos, np.int32_t[:] move) nogil:
+	with gil:
+		print("Here1")
+
+	result_ptr = make_move(&pos, move)
+
+	result = deref(result_ptr)
+
+	delete_position(result_ptr)
+
+	return result
+
+cdef Position *make_move(Position* pos, np.int32_t[:] move) nogil:
 	cdef:
 		np.int32_t i, j, piece, dest
-		Position new_pos
+		Position* new_pos
 
 	with gil:
 		# Grab source and destination of move
@@ -290,11 +335,9 @@ cpdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 		dest = pos.board[j]
 
 		# Create copy of variables and apply 
-		new_pos.board = pos.board.copy()
-		new_pos.wc = pos.wc.copy()
-		new_pos.bc = pos.bc.copy()
-		new_pos.ep = 0
-		new_pos.kp = 0
+		print("Here2")
+		new_pos = init_position(pos.board.copy(), pos.wc.copy(), pos.bc.copy(), 0, 0, 0)
+		print("Here3")
 		new_pos.board[j] = pos.board[i]
 		new_pos.board[i] = empty
 
@@ -401,14 +444,18 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 
 	return score
 
+# Python wrapper for minimax_helper
+cpdef int _minimax_helper(Position pos, int agentIndex, int depth) nogil:
+	return minimax_helper(&pos, agentIndex, depth)
 
-cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
+cdef int minimax_helper(Position* pos, int agentIndex, int depth) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
 		np.int32_t[:] move
 		np.int32_t[:,:] moves
 		int i, ret, bestValue
+		Position* new_pos
 
 	if depth == 0:
 		if agentIndex == 0:
@@ -420,21 +467,21 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			# with gil: print ("agent 1 ", ret)
 			return ret
 	# Agent index 0 is the computer, trying to maximize the scoreboard
+	moves = gen_moves(pos)
+	move = moves[i]
+	new_pos = make_move(pos, move)
+	rotate(new_pos)
 	if agentIndex == 0:
 		bestValue = -100000
-		moves = gen_moves(pos)
 		for i in range(moves.shape[0]):
-			move = moves[i]
-			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos, move)), 1, depth - 1))
-		return bestValue
+			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1))
 	# Agend index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
 		bestValue = 1000000
-		moves = gen_moves(pos)
 		for i in range(moves.shape[0]):
-			move = moves[i]
-			bestValue = min(bestValue, minimax_helper(rotate(make_move(pos, move)), 0, depth -1))
-		return bestValue
+			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
+	delete_position(new_pos)
+	return bestValue
 
 
 	

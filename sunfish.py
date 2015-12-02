@@ -85,7 +85,7 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             'kp': self.kp,
             'score': self.score
         }
-        return map(lambda x: tuple(x), chess.gen_moves(args))
+        return map(lambda x: tuple(x), chess._gen_moves(args))
 
     def rotate(self):
         return Position(
@@ -101,7 +101,7 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             'kp': self.kp,
             'score': self.score
         }
-        pos = chess.make_move(args, np.array(move).astype(np.int32))
+        pos = chess._make_move(args, np.array(move).astype(np.int32))
         return Position(self.stringify(pos['board']), pos['score'], tuple(map(lambda x: bool(x), pos['wc'])), tuple(map(lambda x: bool(x), pos['bc'])), pos['ep'], pos['kp'])
 
     def numpyify(self):
@@ -143,6 +143,7 @@ def main():
         print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
+        print('gen moves')
         while move not in pos.gen_moves():
             match = re.match('([a-h][1-8])'*2, input('Your move: '))
             if match:
@@ -150,6 +151,7 @@ def main():
             else:
                 # Inform the user when invalid input (e.g. "help") is entered
                 print("Please enter a move like g8f6")
+        print('make move')
         pos = pos.move(move)
 
         # After our move we rotate the board and print it again.
@@ -160,7 +162,9 @@ def main():
         # Here is our first attempt at a minimax algorithm tree. 
         temp = float("-inf")
         bestAction = None
+        print('gen moves')
         for move in pos.gen_moves():
+            print('make move')
             new_pos = pos.move(move)
             new_pos.rotate()
             args = {
@@ -171,7 +175,8 @@ def main():
                 'kp': new_pos.kp,
                 'score': new_pos.score
             }
-            new_value = chess.minimax_helper(args, 1, DEPTH)
+            print('minimax helper')
+            new_value = chess._minimax_helper(args, 1, DEPTH)
             if new_value > temp or not bestAction:
                 bestAction = move
                 temp = new_value
@@ -181,6 +186,7 @@ def main():
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
         print("My move:", render(119-move[0]) + render(119-move[1]))
+        print('make move')
         pos = pos.move(move)
         pos = pos.rotate()
 
