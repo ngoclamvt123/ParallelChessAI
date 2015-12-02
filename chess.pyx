@@ -372,7 +372,6 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 	cdef:
 		np.int32_t score = 0
 		np.int32_t row, col, pos, piece, endgame_bool, idx
-
 	endgame_bool = is_endgame(board)
 	for idx in range(120):
 		piece = board[idx]
@@ -461,10 +460,9 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 	cdef:
 		np.int32_t[:] move
 		np.int32_t[:,:] moves
-		int i, ret, bestValue, temp
+		int i, ret, bestValue, v, num_moves, j
+		int* temp
 		omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
-
-		
 
 	if depth == 0:
 		if agentIndex == 0:
@@ -489,24 +487,52 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 		# Assumes it is an odd depth to start with
 		# agentIndex 1 right now
 		omp_init_lock(eval_lock)
-		v = 100000
+		#v = 100000
 		moves = gen_moves(pos)
-		for i in prange(moves.shape[0], num_threads = 4):
-			move = moves[i]
-			temp = 	AlphaBeta(rotate(make_move(pos, move)), 0, depth - 1, alpha, beta)
-			omp_set_lock(eval_lock)
-			v = min(
-				v,
-				temp
-			)
-			# Too negative for max to allow this
-			if v < alpha:
-				return v
-			beta = min(beta, v)
-			omp_unset_lock(eval_lock)
+		num_moves = moves.shape[0]
+		temp = <int *> malloc(sizeof(int) * num_moves)
 
-		omp_destroy_lock(eval_lock)
-		free(<omp_lock_t *> eval_lock)
+		for i in prange(num_moves, num_threads = 4, nogil=True):
+			j = evaluate(rotate(make_move(pos, moves[i])).board)
+			temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
+			#omp_set_lock(eval_lock)
+			#omp_unset_lock(eval_lock)
+		
+		if agentIndex == 1:
+			v = 10000
+			for i in range(num_moves):
+				#with gil:
+					#print(temp[i])
+				v = min(
+					v,
+					temp[i]
+				)
+			#Too negative for max to allow this
+				if v < alpha:
+					return v
+				beta = min(beta, v)
+
+		elif agentIndex == 0:
+			v = -10000
+			for i in range(num_moves):
+				v = max(
+					v,
+					-1 * temp[i]
+				)
+				with gil:
+					print(v)
+				# Prune the rest of the children, don't need to look
+				if v > beta:
+					with gil:
+						print("#########")
+					return v
+				alpha = max(alpha, v)
+
+		#omp_destroy_lock(eval_lock)
+		#free(<omp_lock_t *> eval_lock)
+		with gil:
+			print("-----------")
+		free(temp)
 		return v
 
 	# Agent 0 is the computer, trying to maximize
