@@ -137,6 +137,9 @@ def print_pos(pos):
         print(' ', 8-i, ' '.join(uni_pieces.get(p, p) for p in row))
     print('    a b c d e f g h \n\n')
 
+def print_numpy(np_array):
+    print('[%s]' % (' '.join('%02s' % int_map[i] for i in np_array)))
+
 def main():
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
@@ -154,15 +157,15 @@ def main():
 
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
+        print_pos(pos)
         pos = pos.rotate()
-        print_pos(pos.rotate())
 
         # Here is our first attempt at a minimax algorithm tree. 
         temp = float("-inf")
         bestAction = None
         for move in pos.gen_moves():
             new_pos = pos.move(move)
-            new_pos.rotate()
+            new_pos = new_pos.rotate()
             args = {
                 'board': new_pos.numpyify(), 
                 'wc': np.array(new_pos.wc).astype(np.uint8), 

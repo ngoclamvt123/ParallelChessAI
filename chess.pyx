@@ -5,6 +5,7 @@ cimport numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t
 cimport cython
+from sunfish import print_numpy
 
 ###############################################################################
 # Globals
@@ -263,8 +264,8 @@ cdef inline Position rotate(Position pos) nogil:
 		new_pos.board = pos.board.copy()
 		new_pos.wc = pos.wc.copy()
 		new_pos.bc = pos.bc.copy()
-	new_pos.ep = 0
-	new_pos.kp = 0
+		new_pos.ep = 0
+		new_pos.kp = 0
 
 	for i in range(n):
 		if pos.board[i] >= 0:
@@ -335,7 +336,6 @@ cpdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 
 		# Return result
 		new_pos.score = pos.score + evaluate(new_pos.board)
-		rotate(new_pos)
 		return new_pos
 
 cdef np.int32_t total_material(np.int32_t[:] board) nogil:
@@ -413,12 +413,20 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	if depth == 0:
 		if agentIndex == 0:
 			ret = evaluate(pos.board)
-			# with gil: print ("agent 0 ", ret)
-			return -1 * ret
+			#with gil: print ("agent 0 ", ret)
+			with gil:
+				print_numpy(pos.board)
+				print (ret)
+				print ("----------")
+			return ret
 		else:
 			ret = evaluate(pos.board)
 			# with gil: print ("agent 1 ", ret)
-			return ret
+			with gil:
+				print_numpy(pos.board)
+				print (ret)
+				print ("-----------")
+			return -1 * ret
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	if agentIndex == 0:
 		bestValue = -100000
@@ -427,8 +435,13 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			move = moves[i]
 			bestValue = max(bestValue, minimax_helper(rotate(make_move(pos, move)), 1, depth - 1))
 		return bestValue
-	# Agend index 1 is the human, trying to minimize the scoreboard
+	# Agent index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
+		# with gil:
+		# 	print_numpy(pos.board)
+		# 	pos = rotate(pos)
+		# 	print_numpy(pos.board)
+		# 	raw_input()
 		bestValue = 1000000
 		moves = gen_moves(pos)
 		for i in range(moves.shape[0]):
