@@ -6,6 +6,13 @@ from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t
 cimport cython
 from sunfish import print_numpy
+from openmp cimport omp_lock_t, \
+     omp_init_lock, omp_destroy_lock, \
+     omp_set_lock, omp_unset_lock, omp_get_thread_num
+from libc.stdlib cimport malloc, free
+from cython.parallel import parallel, prange
+
+
 
 ###############################################################################
 # Globals
@@ -450,7 +457,119 @@ cpdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		return bestValue
 
 
-	
+cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
+	cdef:
+		np.int32_t[:] move
+		np.int32_t[:,:] moves
+		int i, ret, bestValue, temp
+		omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
+		
+
+	if depth == 0:
+		if agentIndex == 0:
+			ret = evaluate(pos.board)
+			#with gil: print ("agent 0 ", ret)
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("----------")
+			return ret
+		else:
+			ret = evaluate(pos.board)
+			# with gil: print ("agent 1 ", ret)
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("-----------")
+			return -1 * ret
+
+	# An attempt at parallelization!
+	elif depth == 1:
+		# Assumes it is an odd depth to start with
+		# agentIndex 1 right now
+		omp_init_lock(eval_lock)
+		v = 100000
+		moves = gen_moves(pos)
+		for i in prange(moves.shape[0], num_threads = 4):
+			move = moves[i]
+			temp = 	AlphaBeta(rotate(make_move(pos, move)), 0, depth - 1, alpha, beta)
+			omp_set_lock(eval_lock)
+			v = min(
+				v,
+				temp
+			)
+			# Too negative for max to allow this
+			if v < alpha:
+				return v
+			beta = min(beta, v)
+			omp_unset_lock(eval_lock)
+
+		omp_destroy_lock(eval_lock)
+		free(<omp_lock_t *> eval_lock)
+		return v
+
+	# Agent 0 is the computer, trying to maximize
+	elif agentIndex == 0:
+		v = -100000
+		moves = gen_moves(pos)
+		for i in range(moves.shape[0]):
+			move = moves[i]
+			v = max(
+				v,
+				AlphaBeta(rotate(make_move(pos, move)), 1, depth - 1, alpha, beta)
+			)
+			# Prune the rest of the children, don't need to look
+			if v > beta:
+				return v
+			alpha = max(alpha, v)
+		return v
+
+	# Agent 1 is the human, trying to minimize
+	elif agentIndex == 1:
+		v = 100000
+		moves = gen_moves(pos)
+		for i in range(moves.shape[0]):
+			move = moves[i]
+			v = min(
+				v,
+				AlphaBeta(rotate(make_move(pos, move)), 0, depth - 1, alpha, beta)
+			)
+			# Too negative for max to allow this
+			if v < alpha:
+				return v
+			beta = min(beta, v)
+		return v
+
+# cpdef int PVSplit(Position pos, int alpha, int beta):
+# 	cdef:
+# 		np.int32_t[:] move
+# 		np.int32_t[:,:] moves
+# 		int i, ret, bestVal, score
+
+# 	if depth == 0:
+# 		if agentIndex == 0:
+# 			ret = evaluate(pos.board)
+# 			#with gil: print ("agent 0 ", ret)
+# 			# with gil:
+# 			# 	print_numpy(pos.board)
+# 			# 	print (ret)
+# 			# 	print ("----------")
+# 			return ret
+# 		else:
+# 			ret = evaluate(pos.board)
+# 			# with gil: print ("agent 1 ", ret)
+# 			# with gil:
+# 			# 	print_numpy(pos.board)
+# 			# 	print (ret)
+# 			# 	print ("-----------")
+# 			return -1 * ret
+
+# 	moves = gen_moves(pos)
+# 	score = PVSplit(moves[0], alpha, beta)
+# 	if score > beta:
+# 		return beta
+# 	if score > alpha:
+# 		alpha = score
 
 

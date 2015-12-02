@@ -18,7 +18,7 @@ import chess
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 2
+DEPTH = 3
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -161,9 +161,11 @@ def main():
         pos = pos.rotate()
 
         # Here is our first attempt at a minimax algorithm tree. 
-        temp = float("-inf")
+        alpha = -1000000
+        bestValue = float("-inf")
         bestAction = None
         for move in pos.gen_moves():
+            print("Analyzing")
             new_pos = pos.move(move)
             new_pos = new_pos.rotate()
             args = {
@@ -174,11 +176,11 @@ def main():
                 'kp': new_pos.kp,
                 'score': new_pos.score
             }
-            new_value = chess.minimax_helper(args, 1, DEPTH)
-            if new_value > temp or not bestAction:
+            new_value = chess.AlphaBeta(args, 1, DEPTH, alpha, 100000)
+            if new_value > bestValue or not bestAction:
                 bestAction = move
-                temp = new_value
-
+                bestValue = new_value
+                alpha = max(alpha, new_value)
         move = bestAction
 
         # The black player moves from a rotated position, so we have to
