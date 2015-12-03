@@ -77,15 +77,12 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
 
     def gen_moves(self):
         # Call cython function to generate moves
-        args = {
-            'board': self.numpyify(), 
-            'wc': np.array(self.wc).astype(np.uint8), 
-            'bc': np.array(self.bc).astype(np.uint8), 
-            'ep': self.ep, 
-            'kp': self.kp,
-            'score': self.score
-        }
-        return map(lambda x: tuple(x), chess._gen_moves(args))
+        return map(lambda x: tuple(x), chess._gen_moves(self.numpyify(), 
+                                                        np.array(self.wc).astype(np.uint8), 
+                                                        np.array(self.bc).astype(np.uint8), 
+                                                        self.ep, 
+                                                        self.kp,
+                                                        self.score))
 
     def rotate(self):
         return Position(
@@ -93,15 +90,13 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             self.bc, self.wc, 119-self.ep, 119-self.kp)
 
     def move(self, move):
-        args = {
-            'board': self.numpyify(), 
-            'wc': np.array(self.wc).astype(np.uint8), 
-            'bc': np.array(self.bc).astype(np.uint8), 
-            'ep': self.ep, 
-            'kp': self.kp,
-            'score': self.score
-        }
-        pos = chess._make_move(args, np.array(move).astype(np.int32))
+        pos = chess._make_move(self.numpyify(), 
+                                np.array(self.wc).astype(np.uint8), 
+                                np.array(self.bc).astype(np.uint8), 
+                                self.ep, 
+                                self.kp,
+                                self.score, 
+                                np.array(move).astype(np.int32))
         return Position(self.stringify(pos['board']), pos['score'], tuple(map(lambda x: bool(x), pos['wc'])), tuple(map(lambda x: bool(x), pos['bc'])), pos['ep'], pos['kp'])
 
     def numpyify(self):
@@ -143,7 +138,6 @@ def main():
         print_pos(pos)
         # We query the user until she enters a legal move.
         move = None
-        print('gen moves')
         while move not in pos.gen_moves():
             match = re.match('([a-h][1-8])'*2, input('Your move: '))
             if match:
@@ -151,32 +145,26 @@ def main():
             else:
                 # Inform the user when invalid input (e.g. "help") is entered
                 print("Please enter a move like g8f6")
-        print('make move')
         pos = pos.move(move)
 
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
-        pos = pos.rotate()
         print_pos(pos.rotate())
 
         # Here is our first attempt at a minimax algorithm tree. 
         temp = float("-inf")
         bestAction = None
-        print('gen moves')
         for move in pos.gen_moves():
-            print('make move')
             new_pos = pos.move(move)
-            new_pos.rotate()
-            args = {
-                'board': new_pos.numpyify(), 
-                'wc': np.array(new_pos.wc).astype(np.uint8), 
-                'bc': np.array(new_pos.bc).astype(np.uint8), 
-                'ep': new_pos.ep, 
-                'kp': new_pos.kp,
-                'score': new_pos.score
-            }
-            print('minimax helper')
-            new_value = chess._minimax_helper(args, 1, DEPTH)
+            new_pos = new_pos.rotate()
+            new_value = chess._minimax_helper(new_pos.numpyify(), 
+                                            np.array(new_pos.wc).astype(np.uint8), 
+                                            np.array(new_pos.bc).astype(np.uint8), 
+                                            new_pos.ep, 
+                                            new_pos.kp,
+                                            new_pos.score, 
+                                            1, 
+                                            DEPTH)
             if new_value > temp or not bestAction:
                 bestAction = move
                 temp = new_value
@@ -186,9 +174,7 @@ def main():
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
         print("My move:", render(119-move[0]) + render(119-move[1]))
-        print('make move')
         pos = pos.move(move)
-        pos = pos.rotate()
 
 if __name__ == '__main__':
     main()

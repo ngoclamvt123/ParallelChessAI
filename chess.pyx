@@ -3,7 +3,7 @@
 import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt
-from libc.stdint cimport uintptr_t
+from libc.stdint cimport uintptr_t, int32_t, uint8_t
 from libc.stdlib cimport malloc, free
 cimport cython
 from cython.operator cimport dereference as deref
@@ -51,6 +51,7 @@ cdef enum:
 	MAX_DIRS = 8
 	MAXINT = 999999
 	MAX_MOVES = 140
+	MAX_BOARD_SIZE = 120
 
 np_directions = np.array([
 		   [ N, 2*N, N+W, N+E, MAXINT, MAXINT, MAXINT, MAXINT], # Pawn
@@ -155,56 +156,53 @@ cdef:
 	)
 
 ctypedef struct Position:
-	np.int32_t[:] board
-	np.uint8_t[:] wc
-	np.uint8_t[:] bc
+	np.int32_t board[MAX_BOARD_SIZE]
+	np.uint8_t wc[2]
+	np.uint8_t bc[2]
 	np.int32_t ep
 	np.int32_t kp
 	np.int32_t score
 
-cdef Position *init_position(np.int32_t[:] board,
+cpdef Position init_position(np.int32_t[:] board,
 							np.uint8_t[:] wc,
 							np.uint8_t[:] bc,
 							np.int32_t ep,
 							np.int32_t kp,
-							np.int32_t score) nogil:
-	with gil:
-		print("Here4")
-	cdef Position *pos = <Position *> malloc(sizeof(Position))
-	
-	with gil:
-		print("Here5")
+							np.int32_t score):
+	cdef:
+		int i
+		Position pos
 
-	with gil:
-		print("Here6")
-	pos.board = board
-	with gil:
-		print("Here7")
-	pos.wc = wc
-	pos.bc = bc
+	for i in range(MAX_BOARD_SIZE):
+		pos.board[i] = board[i]
+
+	pos.wc[0] = wc[0]
+	pos.wc[1] = wc[1]
+
+	pos.bc[0] = bc[0]
+	pos.bc[1] = bc[1]
+
 	pos.ep = ep
 	pos.kp = kp
 	pos.score = score
 
 	return pos
 
-cdef void delete_position(Position *pos) nogil:
-	free(pos)
-
 ###############################################################################
 # Chess logic
 ###############################################################################
 
 # Python wrapper for gen_moves
-cpdef np.int32_t[:, :] _gen_moves(Position pos) nogil:
-	cdef: 
-		np.int32_t[:, :] moves
+cpdef np.int32_t[:, :] _gen_moves(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score):
 
-	moves = gen_moves(&pos)
+	return gen_moves(init_position(board, wc, bc, ep, kp, score))
 
-	return moves
-
-cdef np.int32_t[:, :] gen_moves(Position* pos) nogil:
+cdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 	cdef:
 		int i, j, k
 		np.int32_t d, piece, dest
@@ -294,38 +292,41 @@ cdef np.int32_t[:, :] gen_moves(Position* pos) nogil:
 cdef inline void rotate(Position* pos) nogil:
 	
 	cdef:
-		int i
+		int i, j 
+		np.int32_t temp
 
-	for i in range(n):
+	for i in range(n/2):
+		j = MAX_BOARD_SIZE - i - 1
+
 		if pos.board[i] >= 0:
 			pos.board[i] = (pos.board[i] + 6) % 12
 
-	pos.board = pos.board[::-1]
+		if pos.board[j] >= 0:
+			pos.board[j] = (pos.board[j] + 6) % 12
+
+		temp = pos.board[i];
+		pos.board[i] = pos.board[j];
+		pos.board[j] = temp;
+
 	pos.score = pos.score * -1
 	pos.ep = 119-pos.ep
 	pos.kp = 119-pos.kp
 
 # Python wrapper for make_move
-cpdef Position _make_move(Position pos, np.int32_t[:] move) nogil:
-	cdef: 
-		Position* result_ptr
-		Position result
+cpdef Position _make_move(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score,
+									np.int32_t[:] move):
 
-	with gil:
-		print("Here1")
+	return make_move(init_position(board, wc, bc, ep, kp, score), move)
 
-	result_ptr = make_move(&pos, move)
-
-	result = deref(result_ptr)
-
-	delete_position(result_ptr)
-
-	return result
-
-cdef Position *make_move(Position* pos, np.int32_t[:] move) nogil:
+cdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 	cdef:
 		np.int32_t i, j, piece, dest
-		Position* new_pos
+		Position new_pos
 
 	with gil:
 		# Grab source and destination of move
@@ -335,9 +336,10 @@ cdef Position *make_move(Position* pos, np.int32_t[:] move) nogil:
 		dest = pos.board[j]
 
 		# Create copy of variables and apply 
-		print("Here2")
-		new_pos = init_position(pos.board.copy(), pos.wc.copy(), pos.bc.copy(), 0, 0, 0)
-		print("Here3")
+		new_pos = init_position(np.asarray(<np.int32_t[:MAX_BOARD_SIZE]> pos.board), 
+								np.asarray(<np.uint8_t[:2]> pos.wc), 
+								np.asarray(<np.uint8_t[:2]> pos.bc), 
+								0, 0, 0)
 		new_pos.board[j] = pos.board[i]
 		new_pos.board[i] = empty
 
@@ -378,10 +380,10 @@ cdef Position *make_move(Position* pos, np.int32_t[:] move) nogil:
 
 		# Return result
 		new_pos.score = pos.score + evaluate(new_pos.board)
-		rotate(new_pos)
+		rotate(&new_pos)
 		return new_pos
 
-cdef np.int32_t total_material(np.int32_t[:] board) nogil:
+cdef np.int32_t total_material(np.int32_t* board) nogil:
 	cdef:
 		np.int32_t amt = 0
 		np.int32_t piece
@@ -394,7 +396,7 @@ cdef np.int32_t total_material(np.int32_t[:] board) nogil:
 	return amt
 
 
-cdef np.int32_t is_endgame(np.int32_t[:] board) nogil:
+cdef np.int32_t is_endgame(np.int32_t* board) nogil:
 	cdef np.int32_t ret_val = 1
 	# material cutoff
 	# roughly 2 Kings, 2 Rooks, 1 Minor, 6 Pawns each
@@ -404,7 +406,7 @@ cdef np.int32_t is_endgame(np.int32_t[:] board) nogil:
 	return ret_val
 
 
-cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
+cdef np.int32_t evaluate(np.int32_t* board) nogil:
 	cdef:
 		np.int32_t score = 0
 		np.int32_t row, col, pos, piece, endgame_bool, idx
@@ -445,17 +447,25 @@ cdef np.int32_t evaluate(np.int32_t[:] board) nogil:
 	return score
 
 # Python wrapper for minimax_helper
-cpdef int _minimax_helper(Position pos, int agentIndex, int depth) nogil:
-	return minimax_helper(&pos, agentIndex, depth)
+cpdef int _minimax_helper(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score,
+									int agentIndex,
+									int depth):
 
-cdef int minimax_helper(Position* pos, int agentIndex, int depth) nogil:
+	return minimax_helper(init_position(board, wc, bc, ep, kp, score), agentIndex, depth)
+
+cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
 		np.int32_t[:] move
 		np.int32_t[:,:] moves
 		int i, ret, bestValue
-		Position* new_pos
+		Position new_pos
 
 	if depth == 0:
 		if agentIndex == 0:
@@ -470,7 +480,7 @@ cdef int minimax_helper(Position* pos, int agentIndex, int depth) nogil:
 	moves = gen_moves(pos)
 	move = moves[i]
 	new_pos = make_move(pos, move)
-	rotate(new_pos)
+	rotate(&new_pos)
 	if agentIndex == 0:
 		bestValue = -100000
 		for i in range(moves.shape[0]):
@@ -480,7 +490,6 @@ cdef int minimax_helper(Position* pos, int agentIndex, int depth) nogil:
 		bestValue = 1000000
 		for i in range(moves.shape[0]):
 			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
-	delete_position(new_pos)
 	return bestValue
 
 
