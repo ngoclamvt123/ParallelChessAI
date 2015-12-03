@@ -18,7 +18,7 @@ import chess
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 2
+DEPTH = 3
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -165,6 +165,7 @@ def main():
                                             new_pos.score, 
                                             1, 
                                             DEPTH)
+            print(new_value)
             if new_value > temp or not bestAction:
                 bestAction = move
                 temp = new_value
