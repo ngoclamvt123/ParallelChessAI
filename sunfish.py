@@ -134,7 +134,14 @@ def print_pos(pos):
     print('    a b c d e f g h \n\n')
 
 def print_numpy(np_array):
-    print('[%s]' % (' '.join('%02s' % int_map[i] for i in np_array)))
+    output = ""
+    for i in np_array:
+        if i in int_map:
+            output += int_map[i]
+        else:
+            output += str(i)
+    print(output)
+    #print('[%s]' % (' '.join('%02s' % int_map[i] for i in np_array)))
 
 def main():
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
@@ -165,32 +172,32 @@ def main():
             new_pos = pos.move(move)
             new_pos = new_pos.rotate()
             # Basic Minimax funcion
-            # new_value = chess._minimax_helper(new_pos.numpyify(), 
-            #                                 np.array(new_pos.wc).astype(np.uint8), 
-            #                                 np.array(new_pos.bc).astype(np.uint8), 
-            #                                 new_pos.ep, 
-            #                                 new_pos.kp,
-            #                                 new_pos.score, 
-            #                                 1, 
-            #                                 DEPTH)
-            # Alpha Beta pruning
-            new_value = chess._alphabeta_helper(new_pos.numpyify(), 
+            new_value = chess._minimax_helper(new_pos.numpyify(), 
                                             np.array(new_pos.wc).astype(np.uint8), 
                                             np.array(new_pos.bc).astype(np.uint8), 
                                             new_pos.ep, 
                                             new_pos.kp,
                                             new_pos.score, 
                                             1, 
-                                            DEPTH,
-                                            alpha,
-                                            1000000)     
+                                            DEPTH)
+            # Alpha Beta pruning
+            # new_value = chess._alphabeta_helper(new_pos.numpyify(), 
+            #                                 np.array(new_pos.wc).astype(np.uint8), 
+            #                                 np.array(new_pos.bc).astype(np.uint8), 
+            #                                 new_pos.ep, 
+            #                                 new_pos.kp,
+            #                                 new_pos.score, 
+            #                                 1, 
+            #                                 DEPTH,
+            #                                 alpha,
+            #                                 1000000)     
             print(new_value)
             if new_value > bestValue or not bestAction:
                 bestAction = move
                 bestValue = new_value
                 alpha = max(alpha, new_value)
         move = bestAction
-        print("Number of Nodes Explored " + str(chess.printCount()))
+        print("Number of Nodes Explored " + str(chess.printEval()))
         t1 = time.time() - t0
         print("Time to move")
         print(str(t1))

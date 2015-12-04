@@ -304,7 +304,6 @@ cdef inline void rotate(Position* pos) nogil:
 	cdef:
 		int i, j 
 		np.int32_t temp
-
 	for i in range(n/2):
 		j = MAX_BOARD_SIZE - i - 1
 		if pos.board[i] >= 0:
@@ -454,7 +453,7 @@ cdef np.int32_t evaluate(np.int32_t* board) nogil:
 
 	return score
 
-cpdef int printCount():
+cpdef int printEval():
 	return EVALCOUNT
 
 # Python wrapper for minimax_helper
@@ -477,23 +476,27 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		np.int32_t[:,:] moves
 		int i, ret, bestValue
 		Position new_pos
-
 	if depth == 0:
 		if agentIndex == 0:
 			ret = evaluate(pos.board)
 			#with gil: print ("agent 0 ", ret)
 			# with gil:
-			# 	print_numpy(pos.board)
-			# 	print (ret)
-			# 	print ("----------")
+			# 	if ret > 2000:
+			# 		print "Agent index 0"
+			# 		raw_input()
+			# 		print_numpy(pos.board)
+			# 		print (ret)
+			# 		print ("----------")
 			return ret
 		else:
 			ret = evaluate(pos.board)
 			# with gil: print ("agent 1 ", ret)
 			# with gil:
-			# 	print_numpy(pos.board)
-			# 	print (ret)
-			# 	print ("-----------")
+			# 	if ret < -2000:
+			# 		raw_input()
+			# 		print_numpy(pos.board)
+			# 		print (ret)
+			# 		print ("-----------")
 			return -1 * ret
 	
 	moves = gen_moves(pos)
@@ -501,7 +504,6 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	if agentIndex == 0:
 		bestValue = -100000
 		for i in range(moves.shape[0]):
-			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1))
 			move = moves[i]
 			new_pos = make_move(pos, move)
 			rotate(&new_pos)

@@ -1,1 +1,16 @@
 A Record of the amount of time the various functions took to run
+
+Depth 3 Serial Minimax
+1. e4  Nc6 Time: 18.3s, Leaf Nodes: 1,649,395
+2. Nf3 Nf6 Time: 19.8s, Leaf Nodes: 3,398,494
+3. e5  Ne4 Time: 20.6s, Leaf Nodes: 5,247,349
+
+Depth 3 Serial Alpha Beta
+1. e4  Nc6 Time: 1.3s Leaf Nodes: 92,163
+2. Nf3 Nf6 Time: 1.2s Leaf Nodes: 181,400
+3. e5  Ne6 Time: .6s  Leaf Nodes: 220,842
+
+Depth 4 Serial Alpha Beta
+1. e4   Nc6  Time: 8.3s 568,516
+2. Nf3  e5   Time: 12.7s 1,461,932
+3. exd5 Qxd5 Time: 14.1s 2,537,339
