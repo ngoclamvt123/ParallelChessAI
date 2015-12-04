@@ -15,6 +15,7 @@ import numpy as np
 pyximport.install(setup_args={"include_dirs":np.get_include()},
                   reload_support=True)
 import chess
+import time
 # from minimax import *
 
 # This is the max depth we want our minimax to search
@@ -132,6 +133,9 @@ def print_pos(pos):
         print(' ', 8-i, ' '.join(uni_pieces.get(p, p) for p in row))
     print('    a b c d e f g h \n\n')
 
+def print_numpy(np_array):
+    print('[%s]' % (' '.join('%02s' % int_map[i] for i in np_array)))
+
 def main():
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
@@ -149,12 +153,15 @@ def main():
 
         # After our move we rotate the board and print it again.
         # This allows us to see the effect of our move.
-        print_pos(pos.rotate())
-
+        print_pos(pos)
+        pos = pos.rotate()
+        t0 = time.time()
         # Here is our first attempt at a minimax algorithm tree. 
-        temp = float("-inf")
+        alpha = -1000000
+        bestValue = float("-inf")
         bestAction = None
         for move in pos.gen_moves():
+            print("Analyzing")
             new_pos = pos.move(move)
             new_pos = new_pos.rotate()
             new_value = chess._minimax_helper(new_pos.numpyify(), 
@@ -166,16 +173,19 @@ def main():
                                             1, 
                                             DEPTH)
             print(new_value)
-            if new_value > temp or not bestAction:
+            if new_value > bestValue or not bestAction:
                 bestAction = move
-                temp = new_value
-
+                bestValue = new_value
+                alpha = max(alpha, new_value)
         move = bestAction
-
+        t1 = time.time() - t0
+        print("Time to move")
+        print(str(t1))
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
         print("My move:", render(119-move[0]) + render(119-move[1]))
         pos = pos.move(move)
+        pos = pos.rotate()
 
 if __name__ == '__main__':
     main()
