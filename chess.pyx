@@ -454,6 +454,9 @@ cdef np.int32_t evaluate(np.int32_t* board) nogil:
 
 	return score
 
+cpdef int printCount():
+	return EVALCOUNT
+
 # Python wrapper for minimax_helper
 cpdef int _minimax_helper(np.int32_t[:] board,
 									np.uint8_t[:] wc,
@@ -516,127 +519,144 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
 	return bestValue
 
+# Python wrapper for alpha beta helper
+cpdef int _alphabeta_helper(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score,
+									int agentIndex,
+									int depth,
+									int alpha,
+									int beta):
+	return AlphaBeta(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
 
-# cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
-# 	cdef:
-# 		np.int32_t[:] move
-# 		np.int32_t[:,:] moves
-# 		int i, ret, bestValue, v, num_moves, j
-# 		int* temp
-# 		omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
-# 	if depth == 0:
-# 		if agentIndex == 0:
-# 			ret = evaluate(pos.board)
-# 			#with gil: print ("agent 0 ", ret)
-# 			# with gil:
-# 			# 	print_numpy(pos.board)
-# 			# 	print (ret)
-# 			# 	print ("----------")
-# 			return ret
-# 		else:
-# 			ret = evaluate(pos.board)
-# 			# with gil: print ("agent 1 ", ret)
-# 			# with gil:
-# 			# 	print_numpy(pos.board)
-# 			# 	print (ret)
-# 			# 	print ("-----------")
-# 			return -1 * ret
+cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
+	cdef:
+		np.int32_t[:] move
+		np.int32_t[:,:] moves
+		int i, ret, bestValue, v, num_moves, j
+		int* temp
+		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
-# 	# An attempt at parallelization!
-# 	# elif depth == 1:
-# 	# 	# Assumes it is an even depth to start with
-# 	# 	# agentIndex 0 right now
-# 	# 	omp_init_lock(eval_lock)
-# 	# 	v = -100000
-# 	# 	moves = gen_moves(pos)
-# 	# 	num_moves = moves.shape[0]
-# 	# 	temp = <int *> malloc(sizeof(int) * num_moves)
+	if depth == 0:
+		if agentIndex == 0:
+			ret = evaluate(pos.board)
+			#with gil: print ("agent 0 ", ret)
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("----------")
+			return ret
+		else:
+			ret = evaluate(pos.board)
+			# with gil: print ("agent 1 ", ret)
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("-----------")
+			return -1 * ret
 
-# 	# 	for i in prange(num_moves, num_threads = 15, nogil=True):
-# 	# 		# Check if we actually need to evaluate this
-# 	# 		j = evaluate(rotate(make_move(pos, moves[i])).board)
-# 	# 		#with gil:
-# 	# 		#	print j
-# 	# 		#omp_set_lock(eval_lock)
-# 	# 		if (-1 * j) > beta:
-# 	# 			#with gil:
-# 	# 			#	print ("########")
-# 	# 			return -1 * j
-# 	# 		#omp_unset_lock(eval_lock)
-# 	# 		temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
+	# An attempt at parallelization!
+	# elif depth == 1:
+	# 	# Assumes it is an even depth to start with
+	# 	# agentIndex 0 right now
+	# 	omp_init_lock(eval_lock)
+	# 	v = -100000
+	# 	moves = gen_moves(pos)
+	# 	num_moves = moves.shape[0]
+	# 	temp = <int *> malloc(sizeof(int) * num_moves)
+
+	# 	for i in prange(num_moves, num_threads = 15, nogil=True):
+	# 		# Check if we actually need to evaluate this
+	# 		j = evaluate(rotate(make_move(pos, moves[i])).board)
+	# 		#with gil:
+	# 		#	print j
+	# 		#omp_set_lock(eval_lock)
+	# 		if (-1 * j) > beta:
+	# 			#with gil:
+	# 			#	print ("########")
+	# 			return -1 * j
+	# 		#omp_unset_lock(eval_lock)
+	# 		temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
 
 		
-# 	# 	# if agentIndex == 1:
-# 	# 	# 	v = 10000
-# 	# 	# 	for i in range(num_moves):
-# 	# 	# 		#with gil:
-# 	# 	# 			#print(temp[i])
-# 	# 	# 		v = min(
-# 	# 	# 			v,
-# 	# 	# 			temp[i]
-# 	# 	# 		)
-# 	# 	# 	#Too negative for max to allow this
-# 	# 	# 		if v < alpha:
-# 	# 	# 			return v
-# 	# 	# 		beta = min(beta, v)
+	# 	# if agentIndex == 1:
+	# 	# 	v = 10000
+	# 	# 	for i in range(num_moves):
+	# 	# 		#with gil:
+	# 	# 			#print(temp[i])
+	# 	# 		v = min(
+	# 	# 			v,
+	# 	# 			temp[i]
+	# 	# 		)
+	# 	# 	#Too negative for max to allow this
+	# 	# 		if v < alpha:
+	# 	# 			return v
+	# 	# 		beta = min(beta, v)
 
-# 	# 	# elif agentIndex == 0:
-# 	# 	# 	v = -10000
-# 	# 	for i in range(num_moves):
-# 	# 		#with gil:
-# 	# 		#	print("Here")
-# 	# 		v = max(
-# 	# 			v,
-# 	# 			-1 * temp[i]
-# 	# 		)
-# 	# 		#with gil:
-# 	# 		#	print(v)
-# 	# 	# 		# Prune the rest of the children, don't need to look
-# 	# 	# 		if v > beta:
-# 	# 	# 			with gil:
-# 	# 	# 				print("#########")
-# 	# 	#return v
-# 	# 	# 		alpha = max(alpha, v)
+	# 	# elif agentIndex == 0:
+	# 	# 	v = -10000
+	# 	for i in range(num_moves):
+	# 		#with gil:
+	# 		#	print("Here")
+	# 		v = max(
+	# 			v,
+	# 			-1 * temp[i]
+	# 		)
+	# 		#with gil:
+	# 		#	print(v)
+	# 	# 		# Prune the rest of the children, don't need to look
+	# 	# 		if v > beta:
+	# 	# 			with gil:
+	# 	# 				print("#########")
+	# 	#return v
+	# 	# 		alpha = max(alpha, v)
 
-# 	# 	#omp_destroy_lock(eval_lock)
-# 	# 	#free(<omp_lock_t *> eval_lock)
-# 	# 	#with gil:
-# 	# 	#	print("-----------")
-# 	# 	free(temp)
-# 	# 	return v
+	# 	#omp_destroy_lock(eval_lock)
+	# 	#free(<omp_lock_t *> eval_lock)
+	# 	#with gil:
+	# 	#	print("-----------")
+	# 	free(temp)
+	# 	return v
 
-# 	# Agent 0 is the computer, trying to maximize
-# 	elif agentIndex == 0:
-# 		v = -100000
-# 		moves = gen_moves(pos)
-# 		for i in range(moves.shape[0]):
-# 			move = moves[i]
-# 			v = max(
-# 				v,
-# 				AlphaBeta(rotate(&make_move(pos, move)[0]), 1, depth - 1, alpha, beta)
-# 			)
-# 			# Prune the rest of the children, don't need to look
-# 			if v > beta:
-# 				return v
-# 			alpha = max(alpha, v)
-# 		return v
+	# Agent 0 is the computer, trying to maximize
+	if agentIndex == 0:
+		v = -100000
+		moves = gen_moves(pos)
+		for i in range(moves.shape[0]):
+			move = moves[i]
+			new_pos = make_move(pos, move)
+			rotate(&new_pos)
+			v = max(
+				v,
+				AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
+			)
+			# Prune the rest of the children, don't need to look
+			if v > beta:
+				return v
+			alpha = max(alpha, v)
+		return v
 
-# 	# Agent 1 is the human, trying to minimize
-# 	elif agentIndex == 1:
-# 		v = 100000
-# 		moves = gen_moves(pos)
-# 		for i in range(moves.shape[0]):
-# 			move = moves[i]
-# 			v = min(
-# 				v,
-# 				AlphaBeta(rotate(&make_move(pos, move)[0]), 0, depth - 1, alpha, beta)
-# 			)
-# 			# Too negative for max to allow this
-# 			if v < alpha:
-# 				return v
-# 			beta = min(beta, v)
-# 		return v
+	# Agent 1 is the human, trying to minimize
+	elif agentIndex == 1:
+		v = 100000
+		moves = gen_moves(pos)
+		for i in range(moves.shape[0]):
+			move = moves[i]
+			new_pos = make_move(pos, move)
+			rotate(&new_pos)
+			v = min(
+				v,
+				AlphaBeta(new_pos, 0, depth - 1, alpha, beta)
+			)
+			# Too negative for max to allow this
+			if v < alpha:
+				return v
+			beta = min(beta, v)
+		return v
 
 # cpdef int PVSplit(Position pos, int alpha, int beta):
 # 	cdef:

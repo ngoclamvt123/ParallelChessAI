@@ -19,7 +19,7 @@ import time
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 3
+DEPTH = 4
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -164,20 +164,33 @@ def main():
             print("Analyzing")
             new_pos = pos.move(move)
             new_pos = new_pos.rotate()
-            new_value = chess._minimax_helper(new_pos.numpyify(), 
+            # Basic Minimax funcion
+            # new_value = chess._minimax_helper(new_pos.numpyify(), 
+            #                                 np.array(new_pos.wc).astype(np.uint8), 
+            #                                 np.array(new_pos.bc).astype(np.uint8), 
+            #                                 new_pos.ep, 
+            #                                 new_pos.kp,
+            #                                 new_pos.score, 
+            #                                 1, 
+            #                                 DEPTH)
+            # Alpha Beta pruning
+            new_value = chess._alphabeta_helper(new_pos.numpyify(), 
                                             np.array(new_pos.wc).astype(np.uint8), 
                                             np.array(new_pos.bc).astype(np.uint8), 
                                             new_pos.ep, 
                                             new_pos.kp,
                                             new_pos.score, 
                                             1, 
-                                            DEPTH)
+                                            DEPTH,
+                                            alpha,
+                                            1000000)     
             print(new_value)
             if new_value > bestValue or not bestAction:
                 bestAction = move
                 bestValue = new_value
                 alpha = max(alpha, new_value)
         move = bestAction
+        print("Number of Nodes Explored " + str(chess.printCount()))
         t1 = time.time() - t0
         print("Time to move")
         print(str(t1))
