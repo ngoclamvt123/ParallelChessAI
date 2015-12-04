@@ -4,13 +4,13 @@ import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t, int32_t, uint8_t
-from libc.stdlib cimport malloc, free
+from libc.stdlib cimport malloc, free, abs
 cimport cython
 from cython.operator cimport dereference as deref
 from sunfish import print_numpy
-# from openmp cimport omp_lock_t, \
-#      omp_init_lock, omp_destroy_lock, \
-#      omp_set_lock, omp_unset_lock, omp_get_thread_num
+from openmp cimport omp_lock_t, \
+      omp_init_lock, omp_destroy_lock, \
+      omp_set_lock, omp_unset_lock, omp_get_thread_num
 from libc.stdlib cimport malloc, free
 from cython.parallel import parallel, prange
 
@@ -178,7 +178,7 @@ cpdef Position init_position(np.int32_t[:] board,
 							np.uint8_t[:] bc,
 							np.int32_t ep,
 							np.int32_t kp,
-							np.int32_t score):
+							np.int32_t score) nogil:
 	cdef:
 		int i
 		Position pos
@@ -335,59 +335,59 @@ cdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 		np.int32_t i, j, piece, dest
 		Position new_pos
 
-	with gil:
-		# Grab source and destination of move
-		i = move[0]
-		j = move[1]
-		piece = pos.board[i]
-		dest = pos.board[j]
+	# Grab source and destination of move
+	i = move[0]
+	j = move[1]
+	piece = pos.board[i]
+	dest = pos.board[j]
 
-		# Create copy of variables and apply 
+	# Create copy of variables and apply 
+	with gil:
 		new_pos = init_position(np.asarray(<np.int32_t[:MAX_BOARD_SIZE]> pos.board), 
 								np.asarray(<np.uint8_t[:2]> pos.wc), 
 								np.asarray(<np.uint8_t[:2]> pos.bc), 
 								0, 0, 0)
-		new_pos.board[j] = pos.board[i]
-		new_pos.board[i] = empty
+	new_pos.board[j] = pos.board[i]
+	new_pos.board[i] = empty
 
-		# Castling rights
-		if i == A1:
-			new_pos.wc[0] = 0
-			new_pos.wc[1] = pos.wc[1]
+	# Castling rights
+	if i == A1:
+		new_pos.wc[0] = 0
+		new_pos.wc[1] = pos.wc[1]
 
-		if i == H1:
-			new_pos.wc[0] = pos.wc[0]
-			new_pos.wc[1] = 0
+	if i == H1:
+		new_pos.wc[0] = pos.wc[0]
+		new_pos.wc[1] = 0
 
-		if j == A8:
-			new_pos.bc[0] = pos.bc[0]
-			new_pos.bc[1] = 0
+	if j == A8:
+		new_pos.bc[0] = pos.bc[0]
+		new_pos.bc[1] = 0
 
-		if j == H8:
-			new_pos.wc[0] = 0
-			new_pos.bc[1] = pos.bc[1]
+	if j == H8:
+		new_pos.wc[0] = 0
+		new_pos.bc[1] = pos.bc[1]
 
-		# Castling
-		if piece == self_king:
-			new_pos.wc[0] = 0
-			new_pos.wc[1] = 0
-			if abs(j-i) == 2:
-				new_pos.kp = (i+j)//2
-				new_pos.board[A1 if j < i else H1] = empty
-				new_pos.board[new_pos.kp] = self_rook
+	# Castling
+	if piece == self_king:
+		new_pos.wc[0] = 0
+		new_pos.wc[1] = 0
+		if abs(j-i) == 2:
+			new_pos.kp = (i+j)//2
+			new_pos.board[A1 if j < i else H1] = empty
+			new_pos.board[new_pos.kp] = self_rook
 
-		# Pawn promotion
-		if piece == self_pawn:
-			if A8 <= j and j <= H8:
-				new_pos.board[j] = self_queen
-			if j - i == 2*N:
-				ep = i + N
-			if j - i in (N+W, N+E) and dest == empty:
-				new_pos.board[j+S] = empty
+	# Pawn promotion
+	if piece == self_pawn:
+		if A8 <= j and j <= H8:
+			new_pos.board[j] = self_queen
+		if j - i == 2*N:
+			ep = i + N
+		if j - i in (N+W, N+E) and dest == empty:
+			new_pos.board[j+S] = empty
 
-		# Return result
-		new_pos.score = pos.score + evaluate(new_pos.board)
-		return new_pos
+	# Return result
+	new_pos.score = pos.score + evaluate(new_pos.board)
+	return new_pos
 
 cdef np.int32_t total_material(np.int32_t* board) nogil:
 	cdef:
@@ -537,11 +537,12 @@ cpdef int _alphabeta_helper(np.int32_t[:] board,
 
 cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
 	cdef:
-		np.int32_t[:] move
+		np.int32_t[:] move, max_val
 		np.int32_t[:,:] moves
 		int i, ret, bestValue, v, num_moves, j
 		int* temp
-		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
+		Position new_pos
+		omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
 	if depth == 0:
 		if agentIndex == 0:
@@ -561,71 +562,103 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 			# 	print ("-----------")
 			return -1 * ret
 
-	# An attempt at parallelization!
-	# elif depth == 1:
-	# 	# Assumes it is an even depth to start with
-	# 	# agentIndex 0 right now
-	# 	omp_init_lock(eval_lock)
-	# 	v = -100000
-	# 	moves = gen_moves(pos)
-	# 	num_moves = moves.shape[0]
-	# 	temp = <int *> malloc(sizeof(int) * num_moves)
 
-	# 	for i in prange(num_moves, num_threads = 15, nogil=True):
-	# 		# Check if we actually need to evaluate this
-	# 		j = evaluate(rotate(make_move(pos, moves[i])).board)
-	# 		#with gil:
-	# 		#	print j
-	# 		#omp_set_lock(eval_lock)
-	# 		if (-1 * j) > beta:
-	# 			#with gil:
-	# 			#	print ("########")
-	# 			return -1 * j
-	# 		#omp_unset_lock(eval_lock)
-	# 		temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
+
+
+
+	# An attempt at parallelization!
+	elif depth == 1:
+		# Assumes it is an even depth to start with
+		# agentIndex 0 right now
+		if agentIndex == 0:
+			omp_init_lock(eval_lock)
+			with gil:
+				max_val = np.array([-100000], dtype=np.int32)
+			moves = gen_moves(pos)
+			num_moves = moves.shape[0]
+			#temp = <int *> malloc(sizeof(int) * num_moves)
+			# Parallelize over the last level of evaluations
+			for i in prange(num_moves, num_threads = 1, nogil=True):
+				new_pos = make_move(pos, moves[i])
+				rotate(&new_pos)
+				j = evaluate(new_pos.board)
+				if (-1 * j) > beta:
+					return -1 * j
+				omp_set_lock(eval_lock)
+				max_val[0] = max(<np.int32_t> j, max_val[0])
+				omp_unset_lock(eval_lock)
+				#temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
+
+		elif agentIndex == 1:
+			#omp_init_lock(eval_lock)
+			with gil:
+				max_val = np.array([100000], dtype=np.int32)
+			moves = gen_moves(pos)
+			num_moves = moves.shape[0]
+			#temp = <int *> malloc(sizeof(int) * num_moves)
+			# Parallelize over the last level of evaluations
+			for i in range(num_moves, num_threads = 1, nogil=True):
+				new_pos = make_move(pos, moves[i])
+				rotate(&new_pos)
+				j = evaluate(new_pos.board)
+				#omp_set_lock(eval_lock)
+				if j < alpha:
+					return j
+				omp_set_lock(eval_lock)
+				with gil:
+					print("Hey1")
+				max_val[0] = 1
+				with gil:
+					print("Hey2")
+				#max_val[0] = max(<np.int32_t> j, max_val[0])
+				omp_unset_lock(eval_lock)
 
 		
-	# 	# if agentIndex == 1:
-	# 	# 	v = 10000
-	# 	# 	for i in range(num_moves):
-	# 	# 		#with gil:
-	# 	# 			#print(temp[i])
-	# 	# 		v = min(
-	# 	# 			v,
-	# 	# 			temp[i]
-	# 	# 		)
-	# 	# 	#Too negative for max to allow this
-	# 	# 		if v < alpha:
-	# 	# 			return v
-	# 	# 		beta = min(beta, v)
+		# if agentIndex == 1:
+		# 	v = 10000
+		# 	for i in range(num_moves):
+		# 		#with gil:
+		# 			#print(temp[i])
+		# 		v = min(
+		# 			v,
+		# 			temp[i]
+		# 		)
+		# 	#Too negative for max to allow this
+		# 		if v < alpha:
+		# 			return v
+		# 		beta = min(beta, v)
 
-	# 	# elif agentIndex == 0:
-	# 	# 	v = -10000
-	# 	for i in range(num_moves):
-	# 		#with gil:
-	# 		#	print("Here")
-	# 		v = max(
-	# 			v,
-	# 			-1 * temp[i]
-	# 		)
-	# 		#with gil:
-	# 		#	print(v)
-	# 	# 		# Prune the rest of the children, don't need to look
-	# 	# 		if v > beta:
-	# 	# 			with gil:
-	# 	# 				print("#########")
-	# 	#return v
-	# 	# 		alpha = max(alpha, v)
+		# elif agentIndex == 0:
+		# 	v = -10000
+		# for i in range(num_moves):
+		# 	#with gil:
+		# 	#	print("Here")
+		# 	v = max(
+		# 		v,
+		# 		-1 * temp[i]
+		# 	)
+			#with gil:
+			#	print(v)
+		# 		# Prune the rest of the children, don't need to look
+		# 		if v > beta:
+		# 			with gil:
+		# 				print("#########")
+		#return v
+		# 		alpha = max(alpha, v)
 
-	# 	#omp_destroy_lock(eval_lock)
-	# 	#free(<omp_lock_t *> eval_lock)
-	# 	#with gil:
-	# 	#	print("-----------")
-	# 	free(temp)
-	# 	return v
+		omp_destroy_lock(eval_lock)
+		free(<omp_lock_t *> eval_lock)
+		#with gil:
+		#	print("-----------")
+		#3free(temp)
+		return v
+
+
+
+
 
 	# Agent 0 is the computer, trying to maximize
-	if agentIndex == 0:
+	elif agentIndex == 0:
 		v = -100000
 		moves = gen_moves(pos)
 		for i in range(moves.shape[0]):

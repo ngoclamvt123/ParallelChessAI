@@ -10,6 +10,11 @@ Depth 3 Serial Alpha Beta
 2. Nf3 Nf6 Time: 1.2s Leaf Nodes: 181,400
 3. e5  Ne6 Time: .6s  Leaf Nodes: 220,842
 
+Depth 4 Serial Minimax
+1. e4   Nc6  Time: 8.3s  568,516
+2. Nf3  e5   time: 12.7s 1,461,932
+3. exd5 Qxd5 Time: 14.1s 2,537,339
+
 Depth 4 Serial Alpha Beta
 1. e4   Nc6  Time: 8.3s 568,516
 2. Nf3  e5   Time: 12.7s 1,461,932
