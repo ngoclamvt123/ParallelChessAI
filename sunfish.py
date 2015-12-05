@@ -19,7 +19,7 @@ import time
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 4
+DEPTH = 3
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -172,25 +172,25 @@ def main():
             new_pos = pos.move(move)
             new_pos = new_pos.rotate()
             # Basic Minimax funcion
-            new_value = chess._minimax_helper(new_pos.numpyify(), 
-                                            np.array(new_pos.wc).astype(np.uint8), 
-                                            np.array(new_pos.bc).astype(np.uint8), 
-                                            new_pos.ep, 
-                                            new_pos.kp,
-                                            new_pos.score, 
-                                            1, 
-                                            DEPTH)
-            # Alpha Beta pruning
-            # new_value = chess._alphabeta_helper(new_pos.numpyify(), 
+            # new_value = chess._minimax_helper(new_pos.numpyify(), 
             #                                 np.array(new_pos.wc).astype(np.uint8), 
             #                                 np.array(new_pos.bc).astype(np.uint8), 
             #                                 new_pos.ep, 
             #                                 new_pos.kp,
             #                                 new_pos.score, 
             #                                 1, 
-            #                                 DEPTH,
-            #                                 alpha,
-            #                                 1000000)     
+            #                                 DEPTH)
+            # Alpha Beta pruning
+            new_value = chess._alphabeta_helper(new_pos.numpyify(), 
+                                            np.array(new_pos.wc).astype(np.uint8), 
+                                            np.array(new_pos.bc).astype(np.uint8), 
+                                            new_pos.ep, 
+                                            new_pos.kp,
+                                            new_pos.score, 
+                                            1, 
+                                            DEPTH,
+                                            alpha,
+                                            1000000)     
             print(new_value)
             if new_value > bestValue or not bestAction:
                 bestAction = move
