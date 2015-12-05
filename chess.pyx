@@ -536,75 +536,70 @@ cpdef int _pvsplit_helper(np.int32_t[:] board,
 									int beta):
 	return PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
 
-cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
+cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 	cdef:
-		np.int32_t[:] move
+		int i, j
 		np.int32_t[:,:] moves
-		int i, ret, bestValue, num_moves, j, score
-		np.int32_t[:] np_alpha, np_beta, np_v
+		np.int32_t[:] alpha, beta, res, score
 		Position new_pos
 		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
-	if depth == 0:
-		if agentIndex == 0:
-			ret = evaluate(pos.board)
-			#with gil: print ("agent 0 ", ret)
-			# with gil:
-			# 	print_numpy(pos.board)
-			# 	print (ret)
-			# 	print ("----------")
-			return ret
-		else:
-			ret = evaluate(pos.board)
-			# with gil: print ("agent 1 ", ret)
-			# with gil:
-			# 	print_numpy(pos.board)
-			# 	print (ret)
-			# 	print ("-----------")
-			return -1 * ret
-
-	moves = gen_moves(pos)
 	if agentIndex == 0:
+		if depth == 0:
+			return evaluate(pos.board)
+
+		moves = gen_moves(pos)
+
 		with gil:
-			np_alpha = np.array([alpha], dtype=np.int32)
-			np_beta = np.array([beta], dtype=np.int32)
-			np_v = np.array([-100000], dtype=np.int32)
+			alpha = np.array([a], dtype=np.int32)
+			beta = np.array([b], dtype=np.int32)
+			res = np.array([-100000], dtype=np.int32)
+			score = np.array([-100000], dtype=np.int32)
+
 		new_pos = make_move(pos, moves[0])
 		rotate(&new_pos)
-		np_v[0] = max(np_v[0],
-			PVSplit(new_pos, 1, depth-1, np_alpha[0], np_beta[0]))
-		if np_v[0] > np_beta[0]:
-			return np_v[0]
-		np_alpha[0] = max(np_alpha[0], np_v[0])
-		for i in prange(1, moves.shape[0], num_threads=2, nogil=True):
+
+		res[0] = max(res[0],
+			PVSplit(new_pos, 1, depth-1, alpha[0], beta[0]))
+		alpha[0] = max(alpha[0], res[0])
+		score[0] = res[0]
+		for i in prange(1, moves.shape[0], num_threads=2, nogil=True, schedule='guided'):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
-			score = AlphaBeta(new_pos, 1, depth - 1, np_alpha[0], np_beta[0])
-			np_v[0] = max(np_v[0], score)
-			if np_v[0] > np_beta[0]:
-				return np_v[0]
-			np_alpha[0] = max(np_alpha[0], np_v[0])
+			res[0] = AlphaBeta(new_pos, 1, depth - 1, alpha[0], beta[0])
+			score[0] = max(res[0], score[0])
+			if res[0] >= beta[0]:
+				return res[0]
+			alpha[0] = max(alpha[0], res[0])
+		return score[0]
 	else:
+		if depth == 0:
+			return -1*evaluate(pos.board)
+
+		moves = gen_moves(pos)
+
 		with gil:
-			np_alpha = np.array([alpha], dtype=np.int32)
-			np_beta = np.array([beta], dtype=np.int32)
-			np_v = np.array([100000], dtype=np.int32)
+			alpha = np.array([a], dtype=np.int32)
+			beta = np.array([b], dtype=np.int32)
+			res = np.array([100000], dtype=np.int32)
+			score = np.array([100000], dtype=np.int32)
+
 		new_pos = make_move(pos, moves[0])
 		rotate(&new_pos)
-		np_v[0] = min(np_v[0],
-			PVSplit(new_pos, 0, depth-1, np_alpha[0], np_beta[0]))
-		if np_v[0] < np_alpha[0]:
-			return np_v[0]
-		np_beta[0] = min(np_beta[0], np_v[0])
-		for i in prange(1, moves.shape[0], num_threads=2, nogil=True):
+
+		res[0] = min(res[0],
+			PVSplit(new_pos, 0, depth-1, alpha[0], beta[0]))
+		beta[0] = min(beta[0], res[0])
+		score[0] = res[0]
+		for i in prange(1, moves.shape[0], num_threads=2, nogil=True, schedule='guided'):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
-			score = AlphaBeta(new_pos, 0, depth - 1, np_alpha[0], np_beta[0])
-			np_v[0] = min(np_v[0], score)
-			if np_v[0] < alpha:
-				return np_v[0]
-			np_beta[0] = min(np_beta[0], np_v[0])
-	return np_v[0]
+			res[0] = AlphaBeta(new_pos, 0, depth - 1, alpha[0], beta[0])
+			score[0] = min(res[0], score[0])
+			if res[0] <= alpha[0]:
+				return res[0]
+			beta[0] = min(beta[0], res[0])
+		return score[0]
 
 cpdef int _alphabeta_helper(np.int32_t[:] board,
 									np.uint8_t[:] wc,
