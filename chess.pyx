@@ -531,8 +531,10 @@ cpdef int _pvsplit_helper(np.int32_t[:] board,
 									np.int32_t kp,
 									np.int32_t score,
 									int agentIndex,
-									int depth):
-	return PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, -1000000, 1000000)
+									int depth,
+									int alpha,
+									int beta):
+	return PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
 
 cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
 	cdef:
@@ -561,23 +563,46 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) n
 			return -1 * ret
 
 	moves = gen_moves(pos)
-	v = PVSplit(make_move(pos, moves[0]), <int> (not agentIndex), depth-1, alpha, beta)
-
-	if v > beta:
-		return beta
-
-	if v > alpha:
-		alpha = v
-
-	for i in range(1, moves.shape[0]):
-		v = AlphaBeta(make_move(pos, moves[i]), <int> (not agentIndex), depth - 1, alpha, beta)
-
+	if agentIndex == 0:
+		v = -100000
+		new_pos = make_move(pos, moves[0])
+		rotate(&new_pos)
+		v = max(v,
+			PVSplit(new_pos, 1, depth-1, alpha, beta))
 		if v > beta:
-			return beta
-
-		if v > alpha:
-			alpha = v
-
+			return v
+		alpha = max(alpha, v)
+		for i in range(1, moves.shape[0]):
+			move = moves[i]
+			new_pos = make_move(pos, move)
+			rotate(&new_pos)
+			v = max(
+				v,
+				AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
+			)
+			if v > beta:
+				return v
+			alpha = max(alpha, v)
+	else:
+		v = 100000
+		new_pos = make_move(pos, moves[0])
+		rotate(&new_pos)
+		v = min(v,
+			PVSplit(new_pos, 0, depth-1, alpha, beta))
+		if v < alpha:
+			return v
+		beta = min(beta, v)
+		for i in range(1, moves.shape[0]):
+			move = moves[i]
+			new_pos = make_move(pos, move)
+			rotate(&new_pos)
+			v = min(
+				v,
+				AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
+			)
+			if v < alpha:
+				return v
+			beta = min(beta, v)
 	return v
 
 cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
