@@ -540,8 +540,7 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) n
 	cdef:
 		np.int32_t[:] move
 		np.int32_t[:,:] moves
-		int i, ret, bestValue, v, num_moves, j
-		int* temp
+		int i, ret, bestValue, v, num_moves, j, score
 		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
 	if depth == 0:
@@ -572,14 +571,11 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) n
 		if v > beta:
 			return v
 		alpha = max(alpha, v)
-		for i in range(1, moves.shape[0]):
-			move = moves[i]
-			new_pos = make_move(pos, move)
+		for i in prange(1, moves.shape[0], num_threads=1, nogil=True):
+			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
-			v = max(
-				v,
-				AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
-			)
+			score = AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
+			v = v if v > score else score
 			if v > beta:
 				return v
 			alpha = max(alpha, v)
@@ -592,18 +588,27 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) n
 		if v < alpha:
 			return v
 		beta = min(beta, v)
-		for i in range(1, moves.shape[0]):
-			move = moves[i]
-			new_pos = make_move(pos, move)
+		for i in prange(1, moves.shape[0], num_threads=1, nogil=True):
+			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
-			v = min(
-				v,
-				AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
-			)
+			score = AlphaBeta(new_pos, 0, depth - 1, alpha, beta)
+			v = v if v < score else score
 			if v < alpha:
 				return v
 			beta = min(beta, v)
 	return v
+
+cpdef int _alphabeta_helper(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score,
+									int agentIndex,
+									int depth,
+									int alpha,
+									int beta):
+	return AlphaBeta(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
 
 cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
 	cdef:
