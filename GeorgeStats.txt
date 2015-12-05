@@ -1,0 +1,19 @@
+PARALLEL MINIMAX:
+
+2 Threads:
+Number of Nodes Explored 837707
+Time to move
+6.87036108971
+My move: b8c6
+
+4 Threads:
+Number of Nodes Explored 837707
+Time to move
+11.1312789917
+My move: b8c6
+
+15 Threads:
+Number of Nodes Explored 837707
+Time to move
+11.7682499886
+My move: b8c6

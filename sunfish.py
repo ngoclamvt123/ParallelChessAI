@@ -19,7 +19,7 @@ import time
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 3
+DEPTH = 4
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -191,7 +191,10 @@ def main():
             #                                 DEPTH,
             #                                 alpha,
             #                                 1000000)     
+            #print("--------")  
             print(new_value)
+
+            #raw_input()
             if new_value > bestValue or not bestAction:
                 bestAction = move
                 bestValue = new_value

@@ -417,8 +417,6 @@ cdef np.int32_t evaluate(np.int32_t* board) nogil:
 		np.int32_t score = 0
 		np.int32_t row, col, pos, piece, endgame_bool, idx
 	endgame_bool = is_endgame(board)
-	global EVALCOUNT
-	EVALCOUNT += 1
 	for idx in range(120):
 		piece = board[idx]
 		
@@ -450,6 +448,8 @@ cdef np.int32_t evaluate(np.int32_t* board) nogil:
 					else: score += pst_vals[piece % 6][pos]
 				else:
 					score += pst_vals[piece % 6][pos]
+	global EVALCOUNT
+	EVALCOUNT += 1
 
 	return score
 
@@ -541,6 +541,7 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth) nogil:
 		np.int32_t[:,:] moves
 		int i, ret
 		Position new_pos
+		omp_lock_t eval_lock
 	if depth == 0:
 		if agentIndex == 0:
 			ret = evaluate(pos.board)
@@ -566,23 +567,32 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth) nogil:
 	
 	moves = gen_moves(pos)
 	# Agent index 0 is the computer, trying to maximize the scoreboard
+	omp_init_lock(&eval_lock)
 	if agentIndex == 0:
-		bestValue[0] = -100000
-		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
+		with gil:
+			bestValue = np.array([-100000], dtype=np.int32)
+		for i in prange(moves.shape[0], num_threads = 8, nogil=True):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
+			omp_set_lock(&eval_lock)
 			bestValue[0] = max(bestValue[0], minimax_helper(new_pos, 1, depth - 1))
+			omp_unset_lock(&eval_lock)
+		omp_destroy_lock(&eval_lock)
 		return bestValue[0]
 
 
 	# Agent index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
-		bestValue[0] = 1000000
-		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
+		with gil:
+			bestValue = np.array([100000], dtype=np.int32)
+		for i in prange(moves.shape[0], num_threads = 8, nogil=True):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
+			omp_set_lock(&eval_lock)
 			bestValue[0] = min(bestValue[0], minimax_helper(new_pos, 0, depth -1))
-	return bestValue[0]
+			omp_unset_lock(&eval_lock)
+		omp_destroy_lock(&eval_lock)
+		return bestValue[0]
 
 # Python wrapper for alpha beta helper
 cpdef int _alphabeta_helper(np.int32_t[:] board,
@@ -600,7 +610,7 @@ cpdef int _alphabeta_helper(np.int32_t[:] board,
 
 cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
 	cdef:
-		np.int32_t[:] move, max_val
+		np.int32_t[:] move, max_val, min_val
 		np.int32_t[:,:] moves
 		int i, ret, bestValue, v, num_moves, j
 		int* temp
@@ -633,108 +643,45 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 		# Assumes it is an even depth to start with
 		# agentIndex 0 right now
 		if agentIndex == 0:
-			omp_init_lock(&eval_lock)
 			with gil:
-				max_val = np.array([-100000], dtype=np.int32)
+				min_val = np.array([-100000], dtype=np.int32)
 			moves = gen_moves(pos)
 			num_moves = moves.shape[0]
-			#temp = <int *> malloc(sizeof(int) * num_moves)
+			omp_init_lock(&eval_lock)
+
 			# Parallelize over the last level of evaluations
-			for i in prange(num_moves, num_threads = 1, nogil=True):
+			for i in prange(num_moves, num_threads = 8, nogil=True):
 				new_pos = make_move(pos, moves[i])
-				with gil: 
-					print ("hi")
 				rotate(&new_pos)
 				j = evaluate(new_pos.board)
-				with gil: 
-					print ("hi2")
-				if (-1 * j) > beta:
-					return -1 * j
+				j = -1 * j
+				if j > beta:
+					return j
 				omp_set_lock(&eval_lock)
-				max_val[0] = max(<np.int32_t> j, max_val[0])
+				min_val[0] = max(<np.int32_t> j, min_val[0])
 				omp_unset_lock(&eval_lock)
-				#temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
+			omp_destroy_lock(&eval_lock)
+			return min_val[0]
 
 		elif agentIndex == 1:
-			#omp_init_lock(eval_lock)
 			with gil:
 				max_val = np.array([100000], dtype=np.int32)
 			moves = gen_moves(pos)
-			with gil: 
-				print ("hi")
 			num_moves = moves.shape[0]
-			with gil: 
-				print ("hi2")
-
 			omp_init_lock(&eval_lock)
 
-			#temp = <int *> malloc(sizeof(int) * num_moves)
 			# Parallelize over the last level of evaluations
-			for i in prange(num_moves, num_threads = 1, nogil=True):
+			for i in prange(num_moves, num_threads = 8, nogil=True):
 				new_pos = make_move(pos, moves[i])
 				rotate(&new_pos)
-				with gil: 
-					print ("hi")
 				j = evaluate(new_pos.board)
-				with gil: 
-					print ("hi3")
-				#omp_set_lock(eval_lock)
-				with gil: 
-					print ("hi4")
 				if j < alpha:
-					with gil:
-						print ("hi5")
 					return j
-				with gil: 
-					print ("hi6")
 				omp_set_lock(&eval_lock)
-				with gil:
-					print("Hey1")
-				max_val[0] = 1
-				with gil:
-					print("Hey2")
-				#max_val[0] = max(<np.int32_t> j, max_val[0])
+				max_val[0] = min(<np.int32_t> j, max_val[0])
 				omp_unset_lock(&eval_lock)
-
-		
-		# if agentIndex == 1:
-		# 	v = 10000
-		# 	for i in range(num_moves):
-		# 		#with gil:
-		# 			#print(temp[i])
-		# 		v = min(
-		# 			v,
-		# 			temp[i]
-		# 		)
-		# 	#Too negative for max to allow this
-		# 		if v < alpha:
-		# 			return v
-		# 		beta = min(beta, v)
-
-		# elif agentIndex == 0:
-		# 	v = -10000
-		# for i in range(num_moves):
-		# 	#with gil:
-		# 	#	print("Here")
-		# 	v = max(
-		# 		v,
-		# 		-1 * temp[i]
-		# 	)
-			#with gil:
-			#	print(v)
-		# 		# Prune the rest of the children, don't need to look
-		# 		if v > beta:
-		# 			with gil:
-		# 				print("#########")
-		#return v
-		# 		alpha = max(alpha, v)
-
-		omp_destroy_lock(&eval_lock)
-		#free(<omp_lock_t *> eval_lock)
-		#with gil:
-		#	print("-----------")
-		#3free(temp)
-		return v
+			omp_destroy_lock(&eval_lock)
+			return max_val[0]
 
 
 
