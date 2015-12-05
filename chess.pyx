@@ -541,6 +541,7 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) n
 		np.int32_t[:] move
 		np.int32_t[:,:] moves
 		int i, ret, bestValue, v, num_moves, j, score
+		np.int32_t[:] np_alpha, np_beta, np_v
 		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
 	if depth == 0:
@@ -563,39 +564,45 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) n
 
 	moves = gen_moves(pos)
 	if agentIndex == 0:
-		v = -100000
+		with gil:
+			np_alpha = np.array([alpha], dtype=np.int32)
+			np_beta = np.array([beta], dtype=np.int32)
+			np_v = np.array([-100000], dtype=np.int32)
 		new_pos = make_move(pos, moves[0])
 		rotate(&new_pos)
-		v = max(v,
-			PVSplit(new_pos, 1, depth-1, alpha, beta))
-		if v > beta:
-			return v
-		alpha = max(alpha, v)
+		np_v[0] = max(np_v[0],
+			PVSplit(new_pos, 1, depth-1, np_alpha[0], np_beta[0]))
+		if np_v[0] > np_beta[0]:
+			return np_v[0]
+		np_alpha[0] = max(np_alpha[0], np_v[0])
 		for i in prange(1, moves.shape[0], num_threads=1, nogil=True):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
-			score = AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
-			v = v if v > score else score
-			if v > beta:
-				return v
-			alpha = max(alpha, v)
+			score = AlphaBeta(new_pos, 1, depth - 1, np_alpha[0], np_beta[0])
+			np_v[0] = np_v[0] if np_v[0] > score else score
+			if np_v[0] > np_beta[0]:
+				return np_v[0]
+			np_alpha[0] = max(np_alpha[0], np_v[0])
 	else:
-		v = 100000
+		with gil:
+			np_alpha = np.array([alpha], dtype=np.int32)
+			np_beta = np.array([beta], dtype=np.int32)
+			np_v = np.array([100000], dtype=np.int32)
 		new_pos = make_move(pos, moves[0])
 		rotate(&new_pos)
-		v = min(v,
-			PVSplit(new_pos, 0, depth-1, alpha, beta))
-		if v < alpha:
-			return v
-		beta = min(beta, v)
+		np_v[0] = min(np_v[0],
+			PVSplit(new_pos, 0, depth-1, np_alpha[0], np_beta[0]))
+		if np_v[0] < np_alpha[0]:
+			return np_v[0]
+		np_beta[0] = min(np_beta[0], np_v[0])
 		for i in prange(1, moves.shape[0], num_threads=1, nogil=True):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
-			score = AlphaBeta(new_pos, 0, depth - 1, alpha, beta)
-			v = v if v < score else score
-			if v < alpha:
-				return v
-			beta = min(beta, v)
+			score = AlphaBeta(new_pos, 0, depth - 1, np_alpha[0], np_beta[0])
+			np_v[0] = np_v[0] if np_v[0] < score else score
+			if np_v[0] < alpha:
+				return np_v[0]
+			np_beta[0] = min(np_beta[0], np_v[0])
 	return v
 
 cpdef int _alphabeta_helper(np.int32_t[:] board,
