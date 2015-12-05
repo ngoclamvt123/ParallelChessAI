@@ -190,8 +190,11 @@ def main():
                                             1, 
                                             DEPTH,
                                             alpha,
-                                            1000000)     
+                                            1000000)   
+            #print("--------")  
             print(new_value)
+
+            #raw_input()
             if new_value > bestValue or not bestAction:
                 bestAction = move
                 bestValue = new_value
