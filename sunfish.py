@@ -165,41 +165,58 @@ def main():
         t0 = time.time()
         # Here is our first attempt at a minimax algorithm tree. 
         alpha = -1000000
-        bestValue = float("-inf")
-        bestAction = None
-        for move in pos.gen_moves():
-            print("Analyzing")
-            new_pos = pos.move(move)
-            new_pos = new_pos.rotate()
-            # Basic Minimax funcion
-            # new_value = chess._minimax_helper(new_pos.numpyify(), 
-            #                                 np.array(new_pos.wc).astype(np.uint8), 
-            #                                 np.array(new_pos.bc).astype(np.uint8), 
-            #                                 new_pos.ep, 
-            #                                 new_pos.kp,
-            #                                 new_pos.score, 
-            #                                 1, 
-            #                                 DEPTH)
-            # Alpha Beta pruning
-            new_value = chess._alphabeta_helper(new_pos.numpyify(), 
-                                            np.array(new_pos.wc).astype(np.uint8), 
-                                            np.array(new_pos.bc).astype(np.uint8), 
-                                            new_pos.ep, 
-                                            new_pos.kp,
-                                            new_pos.score, 
-                                            1, 
-                                            DEPTH,
-                                            alpha,
-                                            1000000)   
-            #print("--------")  
-            print(new_value)
+        # bestValue = float("-inf")
+        # bestAction = None
+        # for move in pos.gen_moves():
+        #     print("Analyzing")
+        #     new_pos = pos.move(move)
+        #     new_pos = new_pos.rotate()
+        #     # Basic Minimax funcion
+        #     # new_value = chess._minimax_helper(new_pos.numpyify(), 
+        #     #                                 np.array(new_pos.wc).astype(np.uint8), 
+        #     #                                 np.array(new_pos.bc).astype(np.uint8), 
+        #     #                                 new_pos.ep, 
+        #     #                                 new_pos.kp,
+        #     #                                 new_pos.score, 
+        #     #                                 1, 
+        #     #                                 DEPTH)
+        #     # Alpha Beta pruning
+        #     new_value = chess._alphabeta_helper(new_pos.numpyify(), 
+        #                                     np.array(new_pos.wc).astype(np.uint8), 
+        #                                     np.array(new_pos.bc).astype(np.uint8), 
+        #                                     new_pos.ep, 
+        #                                     new_pos.kp,
+        #                                     new_pos.score, 
+        #                                     1, 
+        #                                     DEPTH,
+        #                                     alpha,
+        #                                     1000000)   
+        #     #print("--------")  
+        #     print(new_value)
 
-            #raw_input()
-            if new_value > bestValue or not bestAction:
-                bestAction = move
-                bestValue = new_value
-                alpha = max(alpha, new_value)
-        move = bestAction
+        #     #raw_input()
+        #     if new_value > bestValue or not bestAction:
+        #         bestAction = move
+        #         bestValue = new_value
+        #         alpha = max(alpha, new_value)
+        # move = chess._alphabeta_helper(pos.numpyify(), 
+        #                                     np.array(pos.wc).astype(np.uint8), 
+        #                                     np.array(pos.bc).astype(np.uint8), 
+        #                                     pos.ep, 
+        #                                     pos.kp,
+        #                                     pos.score, 
+        #                                     0, 
+        #                                     DEPTH,
+        #                                     alpha,
+        #                                     1000000)  
+        move = chess._minimax_helper(pos.numpyify(), 
+                                            np.array(pos.wc).astype(np.uint8), 
+                                            np.array(pos.bc).astype(np.uint8), 
+                                            pos.ep, 
+                                            pos.kp,
+                                            pos.score, 
+                                            0, 
+                                            DEPTH) 
         print("Number of Nodes Explored " + str(chess.printEval()))
         t1 = time.time() - t0
         print("Time to move")
