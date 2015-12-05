@@ -531,13 +531,12 @@ cpdef int parallel_minimax_helper(np.int32_t[:] board,
 									int agentIndex,
 									int depth):
 
-	return parallel_minimax(init_position(board, wc, bc, ep, kp, score), agentIndex, depth)
+	return parallel_minimax(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, np.array([-100000], dtype=np.int32))
 
-cdef int parallel_minimax(Position pos, int agentIndex, int depth) nogil:
+cdef int parallel_minimax(Position pos, int agentIndex, int depth, np.int32_t[:] bestValue) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
-		np.int32_t[:] bestValue
 		np.int32_t[:,:] moves
 		int i, ret
 		Position new_pos
@@ -569,8 +568,7 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth) nogil:
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	omp_init_lock(&eval_lock)
 	if agentIndex == 0:
-		with gil:
-			bestValue = np.array([-100000], dtype=np.int32)
+		bestValue[0] = -100000
 		for i in prange(moves.shape[0], num_threads = 8, nogil=True):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
@@ -583,8 +581,7 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth) nogil:
 
 	# Agent index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
-		with gil:
-			bestValue = np.array([100000], dtype=np.int32)
+		bestValue[0] = 100000
 		for i in prange(moves.shape[0], num_threads = 8, nogil=True):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
