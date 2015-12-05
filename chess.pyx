@@ -542,7 +542,7 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 		int i, ret, bestValue, v, num_moves, j
 		int* temp
 		Position new_pos
-		omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
+		omp_lock_t eval_lock#<omp_lock_t *> malloc(sizeof(omp_lock_t))
 
 	if depth == 0:
 		if agentIndex == 0:
@@ -565,13 +565,12 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 
 
 
-
 	# An attempt at parallelization!
 	elif depth == 1:
 		# Assumes it is an even depth to start with
 		# agentIndex 0 right now
 		if agentIndex == 0:
-			omp_init_lock(eval_lock)
+			omp_init_lock(&eval_lock)
 			with gil:
 				max_val = np.array([-100000], dtype=np.int32)
 			moves = gen_moves(pos)
@@ -580,13 +579,17 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 			# Parallelize over the last level of evaluations
 			for i in prange(num_moves, num_threads = 1, nogil=True):
 				new_pos = make_move(pos, moves[i])
+				with gil: 
+					print ("hi")
 				rotate(&new_pos)
 				j = evaluate(new_pos.board)
+				with gil: 
+					print ("hi2")
 				if (-1 * j) > beta:
 					return -1 * j
-				omp_set_lock(eval_lock)
+				omp_set_lock(&eval_lock)
 				max_val[0] = max(<np.int32_t> j, max_val[0])
-				omp_unset_lock(eval_lock)
+				omp_unset_lock(&eval_lock)
 				#temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
 
 		elif agentIndex == 1:
@@ -594,24 +597,41 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 			with gil:
 				max_val = np.array([100000], dtype=np.int32)
 			moves = gen_moves(pos)
+			with gil: 
+				print ("hi")
 			num_moves = moves.shape[0]
+			with gil: 
+				print ("hi2")
+
+			omp_init_lock(&eval_lock)
+
 			#temp = <int *> malloc(sizeof(int) * num_moves)
 			# Parallelize over the last level of evaluations
-			for i in range(num_moves, num_threads = 1, nogil=True):
+			for i in prange(num_moves, num_threads = 1, nogil=True):
 				new_pos = make_move(pos, moves[i])
 				rotate(&new_pos)
+				with gil: 
+					print ("hi")
 				j = evaluate(new_pos.board)
+				with gil: 
+					print ("hi3")
 				#omp_set_lock(eval_lock)
+				with gil: 
+					print ("hi4")
 				if j < alpha:
+					with gil:
+						print ("hi5")
 					return j
-				omp_set_lock(eval_lock)
+				with gil: 
+					print ("hi6")
+				omp_set_lock(&eval_lock)
 				with gil:
 					print("Hey1")
 				max_val[0] = 1
 				with gil:
 					print("Hey2")
 				#max_val[0] = max(<np.int32_t> j, max_val[0])
-				omp_unset_lock(eval_lock)
+				omp_unset_lock(&eval_lock)
 
 		
 		# if agentIndex == 1:
@@ -646,8 +666,8 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 		#return v
 		# 		alpha = max(alpha, v)
 
-		omp_destroy_lock(eval_lock)
-		free(<omp_lock_t *> eval_lock)
+		omp_destroy_lock(&eval_lock)
+		#free(<omp_lock_t *> eval_lock)
 		#with gil:
 		#	print("-----------")
 		#3free(temp)

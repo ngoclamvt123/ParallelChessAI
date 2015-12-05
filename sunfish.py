@@ -19,7 +19,7 @@ import time
 # from minimax import *
 
 # This is the max depth we want our minimax to search
-DEPTH = 1
+DEPTH = 3
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
