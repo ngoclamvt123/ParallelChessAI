@@ -521,6 +521,69 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
 	return bestValue
 
+# Python wrapper for minimax_helper
+cpdef int parallel_minimax_helper(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score,
+									int agentIndex,
+									int depth):
+
+	return parallel_minimax(init_position(board, wc, bc, ep, kp, score), agentIndex, depth)
+
+cdef int parallel_minimax(Position pos, int agentIndex, int depth) nogil:
+	# Right now this is all within the GIL. The only way I can see this getting fixed
+	# is if we rewrite all the methods as cython functions on numpy arrays
+	cdef:
+		np.int32_t[:] bestValue
+		np.int32_t[:,:] moves
+		int i, ret
+		Position new_pos
+	if depth == 0:
+		if agentIndex == 0:
+			ret = evaluate(pos.board)
+			#with gil: print ("agent 0 ", ret)
+			# with gil:
+			# 	if ret > 2000:
+			# 		print "Agent index 0"
+			# 		raw_input()
+			# 		print_numpy(pos.board)
+			# 		print (ret)
+			# 		print ("----------")
+			return ret
+		else:
+			ret = evaluate(pos.board)
+			# with gil: print ("agent 1 ", ret)
+			# with gil:
+			# 	if ret < -2000:
+			# 		raw_input()
+			# 		print_numpy(pos.board)
+			# 		print (ret)
+			# 		print ("-----------")
+			return -1 * ret
+	
+	moves = gen_moves(pos)
+	# Agent index 0 is the computer, trying to maximize the scoreboard
+	if agentIndex == 0:
+		bestValue[0] = -100000
+		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
+			new_pos = make_move(pos, moves[i])
+			rotate(&new_pos)
+			bestValue[0] = max(bestValue[0], minimax_helper(new_pos, 1, depth - 1))
+		return bestValue[0]
+
+
+	# Agent index 1 is the human, trying to minimize the scoreboard
+	elif agentIndex == 1:
+		bestValue[0] = 1000000
+		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
+			new_pos = make_move(pos, moves[i])
+			rotate(&new_pos)
+			bestValue[0] = min(bestValue[0], minimax_helper(new_pos, 0, depth -1))
+	return bestValue[0]
+
 # Python wrapper for alpha beta helper
 cpdef int _alphabeta_helper(np.int32_t[:] board,
 									np.uint8_t[:] wc,
