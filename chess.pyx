@@ -521,19 +521,64 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
 	return bestValue
 
+
+
 # Python wrapper for alpha beta helper
-cpdef int _alphabeta_helper(np.int32_t[:] board,
+cpdef int _pvsplit_helper(np.int32_t[:] board,
 									np.uint8_t[:] wc,
 									np.uint8_t[:] bc,
 									np.int32_t ep,
 									np.int32_t kp,
 									np.int32_t score,
 									int agentIndex,
-									int depth,
-									int alpha,
-									int beta):
-	return AlphaBeta(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
+									int depth):
+	return PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, -1000000, 1000000)
 
+cdef int PVSplit(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
+	cdef:
+		np.int32_t[:] move
+		np.int32_t[:,:] moves
+		int i, ret, bestValue, v, num_moves, j
+		int* temp
+		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
+
+	if depth == 0:
+		if agentIndex == 0:
+			ret = evaluate(pos.board)
+			#with gil: print ("agent 0 ", ret)
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("----------")
+			return ret
+		else:
+			ret = evaluate(pos.board)
+			# with gil: print ("agent 1 ", ret)
+			# with gil:
+			# 	print_numpy(pos.board)
+			# 	print (ret)
+			# 	print ("-----------")
+			return -1 * ret
+
+	moves = gen_moves(pos)
+	v = PVSplit(make_move(pos, moves[0]), <int> (not agentIndex), depth-1, alpha, beta)
+
+	if v > beta:
+		return beta
+
+	if v > alpha:
+		alpha = v
+
+	for i in range(1, moves.shape[0]):
+		v = AlphaBeta(make_move(pos, moves[i]), <int> (not agentIndex), depth - 1, alpha, beta)
+
+		if v > beta:
+			return beta
+
+		if v > alpha:
+			alpha = v
+
+	return v
 
 cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
 	cdef:

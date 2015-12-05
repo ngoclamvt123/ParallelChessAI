@@ -172,7 +172,7 @@ def main():
             new_pos = pos.move(move)
             new_pos = new_pos.rotate()
             # Basic Minimax funcion
-            new_value = chess._minimax_helper(new_pos.numpyify(), 
+            new_value = chess._pvsplit_helper(new_pos.numpyify(), 
                                             np.array(new_pos.wc).astype(np.uint8), 
                                             np.array(new_pos.bc).astype(np.uint8), 
                                             new_pos.ep, 
