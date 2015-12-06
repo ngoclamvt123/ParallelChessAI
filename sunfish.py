@@ -78,12 +78,13 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
 
     def gen_moves(self):
         # Call cython function to generate moves
-        return map(lambda x: tuple(x), chess._gen_moves(self.numpyify(), 
-                                                        np.array(self.wc).astype(np.uint8), 
-                                                        np.array(self.bc).astype(np.uint8), 
-                                                        self.ep, 
-                                                        self.kp,
-                                                        self.score))
+        move_count, sources, dests = chess._gen_moves(self.numpyify(), 
+                                                np.array(self.wc).astype(np.uint8), 
+                                                np.array(self.bc).astype(np.uint8), 
+                                                self.ep, 
+                                                self.kp,
+                                                self.score)
+        return zip(sources, dests)[:move_count]
 
     def rotate(self):
         return Position(

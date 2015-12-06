@@ -132,7 +132,7 @@ np_pst_vals = np.array([
 empty_moves = np.array([[0, 0]] * MAX_MOVES)
 
 cdef:
-	int num_threads = 4
+	int num_threads = 1
 
 	np.int32_t[:, :] directions = np_directions
 	# 20,000 cutoff value derived by Claude Shannon
@@ -231,24 +231,27 @@ cdef Position clone_position(np.int32_t *board,
 ###############################################################################
 
 # Python wrapper for gen_moves
-cpdef np.int32_t[:, :] _gen_moves(np.int32_t[:] board,
+cpdef _gen_moves(np.int32_t[:] board,
 									np.uint8_t[:] wc,
 									np.uint8_t[:] bc,
 									np.int32_t ep,
 									np.int32_t kp,
 									np.int32_t score):
 
-	return gen_moves(init_position(board, wc, bc, ep, kp, score))
+	cdef: 
+		int32_t sources[MAX_MOVES]
+		int32_t dests[MAX_MOVES]
+		int32_t move_count = gen_moves(init_position(board, wc, bc, ep, kp, score), sources, dests)
 
-cdef np.int32_t[:, :] gen_moves(Position pos) nogil:
+	return (move_count, sources, dests)
+
+
+cdef int32_t gen_moves(Position pos, int32_t *sources, int32_t *dests) nogil:
 	cdef:
 		int i, j, k
 		np.int32_t d, piece, dest
-		np.int32_t arr_idx = 0
+		int32_t move_count = 0
 		np.int32_t[:, :] result 
-
-	with gil:
-		result = np.array([[0, 0]] * MAX_MOVES, dtype=np.int32)
 		# np.int32_t[:] result = np.array([[]], dtype = np.int32)
 	# For each of our pieces, iterate through each possible 'ray' of moves,
 	# as defined in the 'directions' map. The rays are broken e.g. by
@@ -278,17 +281,17 @@ cdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 
 				# Castling
 				if i == A1 and dest == self_king and pos.wc[0]:
-					result[arr_idx, 0] = j
-					result[arr_idx, 1] = j-2
-					arr_idx += 1
+					sources[move_count] = j
+					dests[move_count] = j-2
+					move_count += 1
 					# with gil:
 					# 	result.append((j, j-2))
 
 				if i == H1 and dest == self_king and pos.wc[1]:
-					# result[arr_idx] = np.array([j, j+2])
-					result[arr_idx, 0] = j
-					result[arr_idx, 1] = j+2
-					arr_idx += 1						
+					# result[move_count] = np.array([j, j+2])
+					sources[move_count] = j
+					dests[move_count] = j+2
+					move_count += 1						
 					# with gil:
 					# 	result.append((j, j+2))
 
@@ -307,10 +310,10 @@ cdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 					break
 
 				# Move it
-				# result[arr_idx] = np.array([i, j])
-				result[arr_idx, 0] = i
-				result[arr_idx, 1] = j
-				arr_idx += 1
+				# result[move_count] = np.array([i, j])
+				sources[move_count] = i
+				dests[move_count] = j
+				move_count += 1
 				# with gil:
 				# 	result.append((i, j))
 
@@ -324,7 +327,7 @@ cdef np.int32_t[:, :] gen_moves(Position pos) nogil:
 
 				j += d
 
-	return result[:arr_idx]
+	return move_count
 
 
 cdef inline void rotate(Position* pos) nogil:
@@ -356,16 +359,14 @@ cpdef Position _make_move(np.int32_t[:] board,
 									np.int32_t score,
 									np.int32_t[:] move):
 
-	return make_move(init_position(board, wc, bc, ep, kp, score), move)
+	return make_move(init_position(board, wc, bc, ep, kp, score), move[0], move[1])
 
-cdef Position make_move(Position pos, np.int32_t[:] move) nogil:
+cdef Position make_move(Position pos, int32_t i, int32_t j) nogil:
 	cdef:
-		np.int32_t i, j, piece, dest
+		np.int32_t piece, dest
 		Position new_pos
 
 	# Grab source and destination of move
-	i = move[0]
-	j = move[1]
 	piece = pos.board[i]
 	dest = pos.board[j]
 
@@ -505,10 +506,11 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
-		np.int32_t[:] move
-		np.int32_t[:,:] moves
 		int i, ret, bestValue
 		Position new_pos
+		int32_t sources[MAX_MOVES]
+		int32_t dests[MAX_MOVES]
+		int32_t move_count
 	if depth == 0:
 		if agentIndex == 0:
 			ret = evaluate(pos.board)
@@ -532,13 +534,12 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			# 		print ("-----------")
 			return -1 * ret
 	
-	moves = gen_moves(pos)
+	move_count = gen_moves(pos, sources, dests)
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	if agentIndex == 0:
 		bestValue = -100000
-		for i in range(moves.shape[0]):
-			move = moves[i]
-			new_pos = make_move(pos, move)
+		for i in range(move_count):
+			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
 			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1))
 		return bestValue
@@ -547,9 +548,8 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 	# Agent index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
 		bestValue = 1000000
-		for i in range(moves.shape[0]):
-			move = moves[i]
-			new_pos = make_move(pos, move)
+		for i in range(move_count):
+			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
 			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
 	return bestValue
@@ -572,16 +572,18 @@ cpdef int _pvsplit_helper(np.int32_t[:] board,
 cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 	cdef:
 		int i, j
-		np.int32_t[:,:] moves
 		np.int32_t[:] alpha, beta, res, score
 		Position new_pos
+		int32_t move_count
+		int32_t sources[MAX_MOVES]
+		int32_t dests[MAX_MOVES]
 		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
 
 	if agentIndex == 0:
 		if depth == 0:
 			return evaluate(pos.board)
 
-		moves = gen_moves(pos)
+		move_count = gen_moves(pos, sources, dests)
 
 		with gil:
 			alpha = np.array([a], dtype=np.int32)
@@ -589,15 +591,15 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 			res = np.array([-100000], dtype=np.int32)
 			score = np.array([-100000], dtype=np.int32)
 
-		new_pos = make_move(pos, moves[0])
+		new_pos = make_move(pos, sources[0], dests[0])
 		rotate(&new_pos)
 
 		res[0] = max(res[0],
 			PVSplit(new_pos, 1, depth-1, alpha[0], beta[0]))
 		alpha[0] = max(alpha[0], res[0])
 		score[0] = res[0]
-		for i in prange(1, moves.shape[0], num_threads=num_threads, nogil=True, schedule='guided'):
-			new_pos = make_move(pos, moves[i])
+		for i in prange(1, move_count, num_threads=num_threads, nogil=True, schedule='guided'):
+			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
 			res[0] = AlphaBeta(new_pos, 1, depth - 1, alpha[0], beta[0])
 			score[0] = max(res[0], score[0])
@@ -609,7 +611,7 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 		if depth == 0:
 			return -1*evaluate(pos.board)
 
-		moves = gen_moves(pos)
+		move_count = gen_moves(pos, sources, dests)
 
 		with gil:
 			alpha = np.array([a], dtype=np.int32)
@@ -617,15 +619,15 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 			res = np.array([100000], dtype=np.int32)
 			score = np.array([100000], dtype=np.int32)
 
-		new_pos = make_move(pos, moves[0])
+		new_pos = make_move(pos, sources[0], dests[0])
 		rotate(&new_pos)
 
 		res[0] = min(res[0],
 			PVSplit(new_pos, 0, depth-1, alpha[0], beta[0]))
 		beta[0] = min(beta[0], res[0])
 		score[0] = res[0]
-		for i in prange(1, moves.shape[0], num_threads=num_threads, nogil=True, schedule='guided'):
-			new_pos = make_move(pos, moves[i])
+		for i in prange(1, move_count, num_threads=num_threads, nogil=True, schedule='guided'):
+			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
 			res[0] = AlphaBeta(new_pos, 0, depth - 1, alpha[0], beta[0])
 			score[0] = min(res[0], score[0])
@@ -648,8 +650,9 @@ cpdef int _alphabeta_helper(np.int32_t[:] board,
 
 cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
 	cdef:
-		np.int32_t[:] move
-		np.int32_t[:,:] moves
+		int32_t sources[MAX_MOVES]
+		int32_t dests[MAX_MOVES]
+		int32_t move_count
 		int i, ret, bestValue, v, num_moves, j
 		int* temp
 		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
@@ -738,10 +741,9 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 	# Agent 0 is the computer, trying to maximize
 	if agentIndex == 0:
 		v = -100000
-		moves = gen_moves(pos)
-		for i in range(moves.shape[0]):
-			move = moves[i]
-			new_pos = make_move(pos, move)
+		move_count = gen_moves(pos, sources, dests)
+		for i in range(move_count):
+			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
 			v = max(
 				v,
@@ -756,10 +758,9 @@ cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta
 	# Agent 1 is the human, trying to minimize
 	elif agentIndex == 1:
 		v = 100000
-		moves = gen_moves(pos)
-		for i in range(moves.shape[0]):
-			move = moves[i]
-			new_pos = make_move(pos, move)
+		move_count = gen_moves(pos, sources, dests)
+		for i in range(move_count):
+			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
 			v = min(
 				v,
