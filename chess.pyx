@@ -12,7 +12,7 @@ from openmp cimport omp_lock_t, \
       omp_init_lock, omp_destroy_lock, \
       omp_set_lock, omp_unset_lock, omp_get_thread_num
 from libc.stdlib cimport malloc, free
-from cython.parallel import parallel, prange
+from cython.parallel import parallel, prange, threadid
 
 ###############################################################################
 # Globals
@@ -347,6 +347,7 @@ cdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 								np.asarray(<np.uint8_t[:2]> pos.wc), 
 								np.asarray(<np.uint8_t[:2]> pos.bc), 
 								0, 0, 0)
+
 	new_pos.board[j] = pos.board[i]
 	new_pos.board[i] = empty
 
@@ -466,9 +467,9 @@ cpdef int _minimax_helper(np.int32_t[:] board,
 									int agentIndex,
 									int depth):
 
-	return minimax_helper(init_position(board, wc, bc, ep, kp, score), agentIndex, depth)
+	return minimax_helper(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, 0)
 
-cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
+cdef int minimax_helper(Position pos, int agentIndex, int depth, int thread_id) nogil:
 	# Right now this is all within the GIL. The only way I can see this getting fixed
 	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
@@ -500,14 +501,17 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 			return -1 * ret
 	
 	moves = gen_moves(pos)
+
 	# Agent index 0 is the computer, trying to maximize the scoreboard
 	if agentIndex == 0:
 		bestValue = -100000
 		for i in range(moves.shape[0]):
 			move = moves[i]
 			new_pos = make_move(pos, move)
+			with gil: 
+				print("move number", i, " thread id ", thread_id)
 			rotate(&new_pos)
-			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1))
+			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1, thread_id))
 		return bestValue
 
 
@@ -516,9 +520,11 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 		bestValue = 1000000
 		for i in range(moves.shape[0]):
 			move = moves[i]
+			with gil: 
+				print("move number", i, " thread id ", thread_id)
 			new_pos = make_move(pos, move)
 			rotate(&new_pos)
-			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
+			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1, thread_id))
 	return bestValue
 
 # Python wrapper for minimax_helper
@@ -534,11 +540,9 @@ cpdef int parallel_minimax_helper(np.int32_t[:] board,
 	return parallel_minimax(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, np.array([-100000], dtype=np.int32))
 
 cdef int parallel_minimax(Position pos, int agentIndex, int depth, np.int32_t[:] bestValue) nogil:
-	# Right now this is all within the GIL. The only way I can see this getting fixed
-	# is if we rewrite all the methods as cython functions on numpy arrays
 	cdef:
 		np.int32_t[:,:] moves
-		int i, ret
+		int i, ret, thread_id
 		Position new_pos
 		omp_lock_t eval_lock
 	if depth == 0:
@@ -566,30 +570,63 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth, np.int32_t[:]
 	
 	moves = gen_moves(pos)
 	# Agent index 0 is the computer, trying to maximize the scoreboard
-	omp_init_lock(&eval_lock)
+	# omp_init_lock(&eval_lock)
 	if agentIndex == 0:
 		bestValue[0] = -100000
-		for i in prange(moves.shape[0], num_threads = 8, nogil=True):
-			new_pos = make_move(pos, moves[i])
-			rotate(&new_pos)
-			omp_set_lock(&eval_lock)
-			bestValue[0] = max(bestValue[0], minimax_helper(new_pos, 1, depth - 1))
-			omp_unset_lock(&eval_lock)
-		omp_destroy_lock(&eval_lock)
+		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
+			# new_pos = make_move(pos, moves[i])
+			# rotate(&new_pos)
+			with gil:
+				print ("computer. range", i)
+				print ("thread", threadid())
+				thread_id = threadid()
+			# omp_set_lock(&eval_lock)
+			# bestValue[0] = max(bestValue[0], minimax_helper(new_pos, 1, depth-1, 0))
+			# omp_unset_lock(&eval_lock)
+			bestValue[0] = max_helper_function(pos, moves[i], depth, bestValue[0], thread_id)
+		# omp_destroy_lock(&eval_lock)
 		return bestValue[0]
 
 
 	# Agent index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
 		bestValue[0] = 100000
-		for i in prange(moves.shape[0], num_threads = 8, nogil=True):
-			new_pos = make_move(pos, moves[i])
-			rotate(&new_pos)
-			omp_set_lock(&eval_lock)
-			bestValue[0] = min(bestValue[0], minimax_helper(new_pos, 0, depth -1))
-			omp_unset_lock(&eval_lock)
-		omp_destroy_lock(&eval_lock)
+		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
+			# new_pos = make_move(pos, moves[i])
+			# rotate(&new_pos)
+			with gil:
+				print ("human. range", i)
+				print ("thread", threadid())
+				thread_id = threadid()
+			# omp_set_lock(&eval_lock)
+			# bestValue[0] = min(bestValue[0], minimax_helper(new_pos, 0, depth-1, 0))
+			# with gil:
+			# 	print ("hi2")
+			# omp_unset_lock(&eval_lock)
+			bestValue[0] = min_helper_function(pos, moves[i], depth, bestValue[0], thread_id)
+		# omp_destroy_lock(&eval_lock)
 		return bestValue[0]
+
+cdef int min_helper_function(Position pos, np.int32_t[:] move, int depth, int bestValue, int thread_id) nogil: 
+	cdef:
+		Position new_pos
+
+	new_pos = make_move(pos, move)
+	rotate(&new_pos)
+	bestValue = min(bestValue, minimax_helper(new_pos, 0, depth-1, thread_id))
+
+	return bestValue
+
+cdef int max_helper_function(Position pos, np.int32_t[:] move, int depth, int bestValue, int thread_id) nogil:
+	cdef:
+		Position new_pos
+
+	new_pos = make_move(pos, move)
+	rotate(&new_pos)
+	bestValue = max(bestValue, minimax_helper(new_pos, 1, depth-1, thread_id))
+
+	return bestValue
+
 
 # Python wrapper for alpha beta helper
 cpdef int _alphabeta_helper(np.int32_t[:] board,

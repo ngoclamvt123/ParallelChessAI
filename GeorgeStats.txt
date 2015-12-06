@@ -1,4 +1,4 @@
-PARALLEL MINIMAX:
+PARALLEL MINIMAX (DEPTH 3):
 
 2 Threads:
 Number of Nodes Explored 837707
@@ -12,8 +12,27 @@ Time to move
 11.1312789917
 My move: b8c6
 
+8 Threads:
+Number of Nodes Explored 837707
+Time to move
+11.5366330147
+My move: b8c6
+
 15 Threads:
 Number of Nodes Explored 837707
 Time to move
 11.7682499886
+My move: b8c6
+
+DEPTH 4:
+
+Serial:
+Number of Nodes Explored 20705826
+Time to move
+174.684376001
+My move: b8c6
+8 Threads:...
+Number of Nodes Explored 20705826
+Time to move
+302.290905952
 My move: b8c6
