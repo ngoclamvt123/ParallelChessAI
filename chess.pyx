@@ -198,6 +198,32 @@ cpdef Position init_position(np.int32_t[:] board,
 
 	return pos
 
+cdef Position clone_position(np.int32_t *board,
+							np.uint8_t *wc,
+							np.uint8_t *bc,
+							np.int32_t ep,
+							np.int32_t kp,
+							np.int32_t score) nogil:
+	cdef:
+		int i
+		Position pos
+
+	for i in range(MAX_BOARD_SIZE):
+		pos.board[i] = board[i]
+
+	pos.wc[0] = wc[0]
+	pos.wc[1] = wc[1]
+
+	pos.bc[0] = bc[0]
+	pos.bc[1] = bc[1]
+
+	pos.ep = ep
+	pos.kp = kp
+	pos.score = score
+
+	return pos
+
+
 ###############################################################################
 # Chess logic
 ###############################################################################
@@ -342,11 +368,15 @@ cdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 	dest = pos.board[j]
 
 	# Create copy of variables and apply 
-	with gil:
-		new_pos = init_position(np.asarray(<np.int32_t[:MAX_BOARD_SIZE]> pos.board), 
-								np.asarray(<np.uint8_t[:2]> pos.wc), 
-								np.asarray(<np.uint8_t[:2]> pos.bc), 
-								0, 0, 0)
+	# with gil:
+	# 	print ("\n\n\n\n\n\n\n\n\n")
+	# 	print ("INIT POSITION")
+	new_pos = clone_position(pos.board, 
+							pos.wc, 
+							pos.bc, 
+							0, 0, 0)
+		# print ("\n\n\n\n\n\n\n\n\n")
+		# print ("DONE")
 
 	new_pos.board[j] = pos.board[i]
 	new_pos.board[i] = empty
@@ -508,8 +538,8 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth, int thread_id) 
 		for i in range(moves.shape[0]):
 			move = moves[i]
 			new_pos = make_move(pos, move)
-			with gil: 
-				print("move number", i, " thread id ", thread_id)
+			# with gil: 
+			# 	print("move number", i, " thread id ", thread_id)
 			rotate(&new_pos)
 			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1, thread_id))
 		return bestValue
@@ -520,8 +550,8 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth, int thread_id) 
 		bestValue = 1000000
 		for i in range(moves.shape[0]):
 			move = moves[i]
-			with gil: 
-				print("move number", i, " thread id ", thread_id)
+			# with gil: 
+			# 	print("move number", i, " thread id ", thread_id)
 			new_pos = make_move(pos, move)
 			rotate(&new_pos)
 			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1, thread_id))
@@ -576,14 +606,14 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth, np.int32_t[:]
 		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
 			# new_pos = make_move(pos, moves[i])
 			# rotate(&new_pos)
-			with gil:
-				print ("computer. range", i)
-				print ("thread", threadid())
-				thread_id = threadid()
+			# with gil:
+			# 	print ("computer. range", i)
+			# 	print ("thread", threadid())
+			# 	thread_id = threadid()
 			# omp_set_lock(&eval_lock)
 			# bestValue[0] = max(bestValue[0], minimax_helper(new_pos, 1, depth-1, 0))
 			# omp_unset_lock(&eval_lock)
-			bestValue[0] = max_helper_function(pos, moves[i], depth, bestValue[0], thread_id)
+			bestValue[0] = max_helper_function(pos, moves[i], depth, bestValue[0], 0)
 		# omp_destroy_lock(&eval_lock)
 		return bestValue[0]
 
@@ -594,16 +624,16 @@ cdef int parallel_minimax(Position pos, int agentIndex, int depth, np.int32_t[:]
 		for i in prange(moves.shape[0], num_threads = 4, nogil=True):
 			# new_pos = make_move(pos, moves[i])
 			# rotate(&new_pos)
-			with gil:
-				print ("human. range", i)
-				print ("thread", threadid())
-				thread_id = threadid()
+			# with gil:
+			# 	print ("human. range", i)
+			# 	print ("thread", threadid())
+			# 	thread_id = threadid()
 			# omp_set_lock(&eval_lock)
 			# bestValue[0] = min(bestValue[0], minimax_helper(new_pos, 0, depth-1, 0))
 			# with gil:
 			# 	print ("hi2")
 			# omp_unset_lock(&eval_lock)
-			bestValue[0] = min_helper_function(pos, moves[i], depth, bestValue[0], thread_id)
+			bestValue[0] = min_helper_function(pos, moves[i], depth, bestValue[0], 0)
 		# omp_destroy_lock(&eval_lock)
 		return bestValue[0]
 
