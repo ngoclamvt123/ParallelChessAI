@@ -132,7 +132,7 @@ np_pst_vals = np.array([
 empty_moves = np.array([[0, 0]] * MAX_MOVES)
 
 cdef:
-	int num_threads = 2
+	int num_threads = 4
 
 	np.int32_t[:, :] directions = np_directions
 	# 20,000 cutoff value derived by Claude Shannon
