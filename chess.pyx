@@ -4,7 +4,7 @@ import numpy as np
 cimport numpy as np
 from libc.math cimport sqrt
 from libc.stdint cimport uintptr_t, int32_t, uint8_t
-from libc.stdlib cimport malloc, free
+from libc.stdlib cimport malloc, free, abs as c_abs
 cimport cython
 from cython.operator cimport dereference as deref
 from sunfish import print_numpy
@@ -132,6 +132,8 @@ np_pst_vals = np.array([
 empty_moves = np.array([[0, 0]] * MAX_MOVES)
 
 cdef:
+	int num_threads = 2
+
 	np.int32_t[:, :] directions = np_directions
 	# 20,000 cutoff value derived by Claude Shannon
 	np.int32_t[:] piece_vals = np.array([
@@ -197,6 +199,32 @@ cpdef Position init_position(np.int32_t[:] board,
 	pos.score = score
 
 	return pos
+
+cdef Position clone_position(np.int32_t *board,
+							np.uint8_t *wc,
+							np.uint8_t *bc,
+							np.int32_t ep,
+							np.int32_t kp,
+							np.int32_t score) nogil:
+	cdef:
+		int i
+		Position pos
+
+	for i in range(MAX_BOARD_SIZE):
+		pos.board[i] = board[i]
+
+	pos.wc[0] = wc[0]
+	pos.wc[1] = wc[1]
+
+	pos.bc[0] = bc[0]
+	pos.bc[1] = bc[1]
+
+	pos.ep = ep
+	pos.kp = kp
+	pos.score = score
+
+	return pos
+
 
 ###############################################################################
 # Chess logic
@@ -335,59 +363,64 @@ cdef Position make_move(Position pos, np.int32_t[:] move) nogil:
 		np.int32_t i, j, piece, dest
 		Position new_pos
 
-	with gil:
-		# Grab source and destination of move
-		i = move[0]
-		j = move[1]
-		piece = pos.board[i]
-		dest = pos.board[j]
+	# Grab source and destination of move
+	i = move[0]
+	j = move[1]
+	piece = pos.board[i]
+	dest = pos.board[j]
 
-		# Create copy of variables and apply 
-		new_pos = init_position(np.asarray(<np.int32_t[:MAX_BOARD_SIZE]> pos.board), 
-								np.asarray(<np.uint8_t[:2]> pos.wc), 
-								np.asarray(<np.uint8_t[:2]> pos.bc), 
-								0, 0, 0)
-		new_pos.board[j] = pos.board[i]
-		new_pos.board[i] = empty
+	# Create copy of variables and apply 
+	# with gil:
+	# 	print ("\n\n\n\n\n\n\n\n\n")
+	# 	print ("INIT POSITION")
+	new_pos = clone_position(pos.board, 
+							pos.wc, 
+							pos.bc, 
+							0, 0, 0)
+		# print ("\n\n\n\n\n\n\n\n\n")
+		# print ("DONE")
 
-		# Castling rights
-		if i == A1:
-			new_pos.wc[0] = 0
-			new_pos.wc[1] = pos.wc[1]
+	new_pos.board[j] = pos.board[i]
+	new_pos.board[i] = empty
 
-		if i == H1:
-			new_pos.wc[0] = pos.wc[0]
-			new_pos.wc[1] = 0
+	# Castling rights
+	if i == A1:
+		new_pos.wc[0] = 0
+		new_pos.wc[1] = pos.wc[1]
 
-		if j == A8:
-			new_pos.bc[0] = pos.bc[0]
-			new_pos.bc[1] = 0
+	if i == H1:
+		new_pos.wc[0] = pos.wc[0]
+		new_pos.wc[1] = 0
 
-		if j == H8:
-			new_pos.wc[0] = 0
-			new_pos.bc[1] = pos.bc[1]
+	if j == A8:
+		new_pos.bc[0] = pos.bc[0]
+		new_pos.bc[1] = 0
 
-		# Castling
-		if piece == self_king:
-			new_pos.wc[0] = 0
-			new_pos.wc[1] = 0
-			if abs(j-i) == 2:
-				new_pos.kp = (i+j)//2
-				new_pos.board[A1 if j < i else H1] = empty
-				new_pos.board[new_pos.kp] = self_rook
+	if j == H8:
+		new_pos.wc[0] = 0
+		new_pos.bc[1] = pos.bc[1]
 
-		# Pawn promotion
-		if piece == self_pawn:
-			if A8 <= j and j <= H8:
-				new_pos.board[j] = self_queen
-			if j - i == 2*N:
-				ep = i + N
-			if j - i in (N+W, N+E) and dest == empty:
-				new_pos.board[j+S] = empty
+	# Castling
+	if piece == self_king:
+		new_pos.wc[0] = 0
+		new_pos.wc[1] = 0
+		if c_abs(j-i) == 2:
+			new_pos.kp = (i+j)//2
+			new_pos.board[A1 if j < i else H1] = empty
+			new_pos.board[new_pos.kp] = self_rook
 
-		# Return result
-		new_pos.score = pos.score + evaluate(new_pos.board)
-		return new_pos
+	# Pawn promotion
+	if piece == self_pawn:
+		if A8 <= j and j <= H8:
+			new_pos.board[j] = self_queen
+		if j - i == 2*N:
+			ep = i + N
+		if j - i in (N+W, N+E) and dest == empty:
+			new_pos.board[j+S] = empty
+
+	# Return result
+	new_pos.score = pos.score + evaluate(new_pos.board)
+	return new_pos
 
 cdef np.int32_t total_material(np.int32_t* board) nogil:
 	cdef:
@@ -563,7 +596,7 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 			PVSplit(new_pos, 1, depth-1, alpha[0], beta[0]))
 		alpha[0] = max(alpha[0], res[0])
 		score[0] = res[0]
-		for i in prange(1, moves.shape[0], num_threads=2, nogil=True, schedule='guided'):
+		for i in prange(1, moves.shape[0], num_threads=num_threads, nogil=True, schedule='guided'):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
 			res[0] = AlphaBeta(new_pos, 1, depth - 1, alpha[0], beta[0])
@@ -591,7 +624,7 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 			PVSplit(new_pos, 0, depth-1, alpha[0], beta[0]))
 		beta[0] = min(beta[0], res[0])
 		score[0] = res[0]
-		for i in prange(1, moves.shape[0], num_threads=2, nogil=True, schedule='guided'):
+		for i in prange(1, moves.shape[0], num_threads=num_threads, nogil=True, schedule='guided'):
 			new_pos = make_move(pos, moves[i])
 			rotate(&new_pos)
 			res[0] = AlphaBeta(new_pos, 0, depth - 1, alpha[0], beta[0])
