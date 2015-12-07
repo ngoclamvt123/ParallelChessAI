@@ -8,9 +8,9 @@ from libc.stdlib cimport malloc, free, abs as c_abs
 cimport cython
 from cython.operator cimport dereference as deref
 from sunfish import print_numpy
-# from openmp cimport omp_lock_t, \
-#      omp_init_lock, omp_destroy_lock, \
-#      omp_set_lock, omp_unset_lock, omp_get_thread_num
+from openmp cimport omp_lock_t, \
+     omp_init_lock, omp_destroy_lock, \
+     omp_set_lock, omp_unset_lock, omp_get_thread_num
 from libc.stdlib cimport malloc, free
 from cython.parallel import parallel, prange
 
@@ -557,7 +557,7 @@ cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
 
 
 # Python wrapper for alpha beta helper
-cpdef int _pvsplit_helper(np.int32_t[:] board,
+cpdef _pvsplit_helper(np.int32_t[:] board,
 									np.uint8_t[:] wc,
 									np.uint8_t[:] bc,
 									np.int32_t ep,
@@ -567,23 +567,34 @@ cpdef int _pvsplit_helper(np.int32_t[:] board,
 									int depth,
 									int alpha,
 									int beta):
-	return PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
+	cdef int32_t move[2]
+	return (PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta, move), move)
 
-cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
+cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b, int32_t *move) nogil:
 	cdef:
-		int i, j
+		int i, j, max_idx, max_eval, curr_eval
 		np.int32_t[:] alpha, beta, res, score
 		Position new_pos
-		int32_t move_count
+		int32_t move_count, temp
 		int32_t sources[MAX_MOVES]
 		int32_t dests[MAX_MOVES]
-		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
+		Position positions[MAX_MOVES]
+		omp_lock_t eval_lock #= <omp_lock_t *> malloc(sizeof(omp_lock_t))
+
+	move_count = gen_moves(pos, sources, dests)
 
 	if agentIndex == 0:
 		if depth == 0:
 			return evaluate(pos.board)
-
-		move_count = gen_moves(pos, sources, dests)
+		
+		max_eval = -100000
+		for i in range(move_count):
+			positions[i] = make_move(pos, sources[i], dests[i])
+			rotate(&positions[i])
+			curr_eval = evaluate(positions[i].board)
+			if curr_eval > max_eval:
+				max_eval = curr_eval
+				max_idx = i
 
 		with gil:
 			alpha = np.array([a], dtype=np.int32)
@@ -591,27 +602,38 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 			res = np.array([-100000], dtype=np.int32)
 			score = np.array([-100000], dtype=np.int32)
 
-		new_pos = make_move(pos, sources[0], dests[0])
-		rotate(&new_pos)
-
 		res[0] = max(res[0],
-			PVSplit(new_pos, 1, depth-1, alpha[0], beta[0]))
+			PVSplit(positions[max_idx], 1, depth-1, alpha[0], beta[0], move))
 		alpha[0] = max(alpha[0], res[0])
 		score[0] = res[0]
-		for i in prange(1, move_count, num_threads=num_threads, nogil=True, schedule='guided'):
-			new_pos = make_move(pos, sources[i], dests[i])
-			rotate(&new_pos)
-			res[0] = AlphaBeta(new_pos, 1, depth - 1, alpha[0], beta[0])
-			score[0] = max(res[0], score[0])
-			if res[0] >= beta[0]:
-				return res[0]
-			alpha[0] = max(alpha[0], res[0])
+		omp_init_lock(&eval_lock)
+		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
+			if i == max_idx:
+				continue
+			temp = AlphaBeta(positions[i], 1, depth - 1, alpha[0], beta[0])
+			omp_set_lock(&eval_lock)
+			if temp > score[0]:
+				score[0] = temp
+				move[0] = sources[i]
+				move[1] = dests[i]
+			if temp >= beta[0]:
+				return temp
+			alpha[0] = max(alpha[0], temp)
+			omp_unset_lock(&eval_lock)
+		omp_destroy_lock(&eval_lock)
 		return score[0]
 	else:
 		if depth == 0:
 			return -1*evaluate(pos.board)
 
-		move_count = gen_moves(pos, sources, dests)
+		max_eval = 100000
+		for i in range(move_count):
+			positions[i] = make_move(pos, sources[i], dests[i])
+			rotate(&positions[i])
+			curr_eval = -1*evaluate(positions[i].board)
+			if curr_eval < max_eval:
+				max_eval = curr_eval
+				max_idx = i
 
 		with gil:
 			alpha = np.array([a], dtype=np.int32)
@@ -619,21 +641,22 @@ cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b) nogil:
 			res = np.array([100000], dtype=np.int32)
 			score = np.array([100000], dtype=np.int32)
 
-		new_pos = make_move(pos, sources[0], dests[0])
-		rotate(&new_pos)
-
 		res[0] = min(res[0],
-			PVSplit(new_pos, 0, depth-1, alpha[0], beta[0]))
+			PVSplit(positions[max_idx], 0, depth-1, alpha[0], beta[0], move))
 		beta[0] = min(beta[0], res[0])
 		score[0] = res[0]
-		for i in prange(1, move_count, num_threads=num_threads, nogil=True, schedule='guided'):
-			new_pos = make_move(pos, sources[i], dests[i])
-			rotate(&new_pos)
-			res[0] = AlphaBeta(new_pos, 0, depth - 1, alpha[0], beta[0])
-			score[0] = min(res[0], score[0])
-			if res[0] <= alpha[0]:
-				return res[0]
-			beta[0] = min(beta[0], res[0])
+		omp_init_lock(&eval_lock)
+		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
+			if i == max_idx:
+				continue
+			temp = AlphaBeta(positions[i], 0, depth - 1, alpha[0], beta[0])
+			omp_set_lock(&eval_lock)
+			score[0] = min(temp, score[0])
+			if temp <= alpha[0]:
+				return temp
+			beta[0] = min(beta[0], temp)
+			omp_unset_lock(&eval_lock)
+		omp_destroy_lock(&eval_lock)
 		return score[0]
 
 cpdef int _alphabeta_helper(np.int32_t[:] board,
