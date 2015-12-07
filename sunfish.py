@@ -6,6 +6,7 @@ import sys
 import os.path
 sys.path.append('util')
 
+import argparse
 from itertools import count
 from collections import OrderedDict, namedtuple
 
@@ -99,23 +100,52 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
     def stringify(self, np_board):
         return ''.join(map(lambda c: int_map[c], np_board))
 
-    # Techniques to choose move
+###############################################################################
+# Techniques
+###############################################################################
 
-    def pv_split(self):
-        (score, move) = _pvsplit(self.numpyify(), 
-                            np.array(self.wc).astype(np.uint8), 
-                            np.array(self.bc).astype(np.uint8), 
-                            self.ep, 
-                            self.kp,
-                            self.score, 
-                            0, 
-                            DEPTH,
-                            -1000000,
-                            1000000,
-                            NUM_THREADS)
-        nodes = print_eval()
-        return (score, move, nodes)
+def minimax_serial(pos):
+    print("Minimax Serial")
+    pass
 
+def minimax_top_level_parallel(pos):
+    print("Minimax Top Level Parallel")
+    pass
+
+def alpha_beta_serial(pos):
+    print("Alpha Beta Serial")
+    pass
+
+def alpha_beta_bottom_level_parallel(pos):
+    print("Alpha Beta Bottom Level Parallel")
+    pass
+
+def alpha_beta_top_level_parallel(pos):
+    print("Alpha Beta Top Level Parallel")
+    pass
+
+def pvsplit(pos):
+    print("PVSplit")
+    (score, move) = _pvsplit(pos.numpyify(), 
+                        np.array(pos.wc).astype(np.uint8), 
+                        np.array(pos.bc).astype(np.uint8), 
+                        pos.ep, 
+                        pos.kp,
+                        pos.score, 
+                        0, 
+                        DEPTH,
+                        -1000000,
+                        1000000,
+                        NUM_THREADS)
+    nodes = print_eval()
+    return (score, move, nodes)
+
+strategy_map = { 1: minimax_serial, 
+                2: minimax_top_level_parallel, 
+                3: alpha_beta_serial,
+                4: alpha_beta_bottom_level_parallel,
+                5: alpha_beta_top_level_parallel,
+                6: pvsplit }
 
 ###############################################################################
 # User interface
@@ -151,6 +181,18 @@ def print_numpy(np_array):
     print(output)
 
 def main():
+    parser = argparse.ArgumentParser(description="Choose the AI strategy")
+    parser.add_argument("-s", "--strategy", type=int, choices=range(1,7), default=1,
+                        help="Choose: 1 for Serial Minimax, 2 for Parallel Top Level Minimax, 3 for Serial Alpha Beta, 4 for Parallel Bottom Level Alpha Beta, 5 for Parallel Top Level Parallel, 6 for PVSplit. By default, we use Serial Minimax.")
+    parser.add_argument("-t", "--threads", type=int, default=4,
+                        help="Choose the number of threads to use. By default, we use 4.")
+    args = parser.parse_args()
+
+    if args.threads != None:
+        NUM_THREADS = args.threads
+
+    strategy = strategy_map[args.strategy]
+
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
         print_pos(pos)
@@ -173,7 +215,7 @@ def main():
         t0 = time.time()
         print('Analyzing')
 
-        (score, move, nodes) = pos.pv_split()
+        (score, move, nodes) = strategy(pos)
 
         print(score)
         print("Number of Nodes Explored " + str(nodes))
