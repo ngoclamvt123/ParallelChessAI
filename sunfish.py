@@ -213,7 +213,7 @@ def main():
         pos = pos.rotate()
 
         t0 = time.time()
-        print('Analyzing')
+        print('Analyzing with ', end='')
 
         (score, move, nodes) = strategy(pos)
 
