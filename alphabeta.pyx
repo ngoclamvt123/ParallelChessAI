@@ -18,7 +18,7 @@ from openmp cimport omp_lock_t, \
 from constants cimport *
 from chess cimport Position, init_position, gen_moves, make_move, evaluate, rotate
 
-cpdef int _alpha_beta_serial(np.int32_t[:] board,
+cpdef _alpha_beta_serial(np.int32_t[:] board,
 									np.uint8_t[:] wc,
 									np.uint8_t[:] bc,
 									np.int32_t ep,
@@ -29,11 +29,13 @@ cpdef int _alpha_beta_serial(np.int32_t[:] board,
 									int alpha,
 									int beta):
 	cdef:
+		int32_t move[2]
 		Position pos = init_position(board, wc, bc, ep, kp, score)
+		int bestValue = alpha_beta_serial(pos, agentIndex, depth, alpha, beta, move)
 
-	return alpha_beta_serial(pos, agentIndex, depth, alpha, beta)
+	return (bestValue, move)
 
-cpdef int alpha_beta_serial(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
+cdef int alpha_beta_serial(Position pos, int agentIndex, int depth, int alpha, int beta, int32_t *move) nogil:
 	cdef:
 		int32_t sources[MAX_MOVES]
 		int32_t dests[MAX_MOVES]
@@ -55,12 +57,15 @@ cpdef int alpha_beta_serial(Position pos, int agentIndex, int depth, int alpha, 
 			rotate(&new_pos)
 			v = max(
 				v,
-				alpha_beta_serial(new_pos, 1, depth - 1, alpha, beta)
+				alpha_beta_serial(new_pos, 1, depth - 1, alpha, beta, move)
 			)
 			# Prune the rest of the children, don't need to look
 			if v > beta:
 				return v
-			alpha = max(alpha, v)
+			if v > alpha:
+				alpha = v
+				move[0] = sources[i]
+				move[1] = dests[i]
 		return v
 
 	# Agent 1 is the human, trying to minimize
@@ -72,7 +77,7 @@ cpdef int alpha_beta_serial(Position pos, int agentIndex, int depth, int alpha, 
 			rotate(&new_pos)
 			v = min(
 				v,
-				alpha_beta_serial(new_pos, 0, depth - 1, alpha, beta)
+				alpha_beta_serial(new_pos, 0, depth - 1, alpha, beta, move)
 			)
 			# Too negative for max to allow this
 			if v < alpha:

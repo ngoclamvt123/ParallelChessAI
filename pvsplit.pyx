@@ -77,7 +77,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
 			if i == max_idx:
 				continue
-			temp = alpha_beta_serial(positions[i], 1, depth - 1, alpha[0], beta[0])
+			temp = alpha_beta_serial(positions[i], 1, depth - 1, alpha[0], beta[0], move)
 			omp_set_lock(&eval_lock)
 			if temp > score[0]:
 				score[0] = temp
@@ -102,6 +102,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 				max_eval = curr_eval
 				max_idx = i
 
+		# TODO try to get rid of this
 		with gil:
 			alpha = np.array([a], dtype=np.int32)
 			beta = np.array([b], dtype=np.int32)
@@ -116,7 +117,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
 			if i == max_idx:
 				continue
-			temp = alpha_beta_serial(positions[i], 0, depth - 1, alpha[0], beta[0])
+			temp = alpha_beta_serial(positions[i], 0, depth - 1, alpha[0], beta[0], move)
 			omp_set_lock(&eval_lock)
 			score[0] = min(temp, score[0])
 			if temp <= alpha[0]:

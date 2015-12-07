@@ -18,14 +18,16 @@ pyximport.install(setup_args={"include_dirs":np.get_include()},
                   reload_support=True)
 
 from chess import print_eval, _make_move, _gen_moves
+from minimax import _minimax_serial, _minimax_top_level_parallel
+from alphabeta import _alpha_beta_serial
 from pvsplit import _pvsplit
 import time
 
 # This is the max depth we want our minimax to search
-DEPTH = 6
+DEPTH = 5
 
-# This is the number of threads at which we run our AI
-NUM_THREADS = 2
+# This is the number of threads at which we run our strategy
+NUM_THREADS = 1
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -105,23 +107,48 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
 ###############################################################################
 
 def minimax_serial(pos):
-    print("Minimax Serial")
-    pass
+    (score, move) = _minimax_serial(pos.numpyify(), 
+                        np.array(pos.wc).astype(np.uint8), 
+                        np.array(pos.bc).astype(np.uint8), 
+                        pos.ep, 
+                        pos.kp,
+                        pos.score, 
+                        0, 
+                        DEPTH)
+    nodes = print_eval()
+    return (score, move, nodes)
 
 def minimax_top_level_parallel(pos):
-    print("Minimax Top Level Parallel")
-    pass
+    (score, move) = _minimax_top_level_parallel(pos.numpyify(), 
+                        np.array(pos.wc).astype(np.uint8), 
+                        np.array(pos.bc).astype(np.uint8), 
+                        pos.ep, 
+                        pos.kp,
+                        pos.score, 
+                        0, 
+                        DEPTH,
+                        NUM_THREADS)
+    nodes = print_eval()
+    return (score, move, nodes)
 
 def alpha_beta_serial(pos):
-    print("Alpha Beta Serial")
-    pass
+    (score, move) = _alpha_beta_serial(pos.numpyify(), 
+                        np.array(pos.wc).astype(np.uint8), 
+                        np.array(pos.bc).astype(np.uint8), 
+                        pos.ep, 
+                        pos.kp,
+                        pos.score, 
+                        0, 
+                        DEPTH,
+                        -100000,
+                        100000)
+    nodes = print_eval()
+    return (score, move, nodes)
 
 def alpha_beta_bottom_level_parallel(pos):
-    print("Alpha Beta Bottom Level Parallel")
     pass
 
 def alpha_beta_top_level_parallel(pos):
-    print("Alpha Beta Top Level Parallel")
     pass
 
 def pvsplit(pos):
@@ -140,12 +167,12 @@ def pvsplit(pos):
     nodes = print_eval()
     return (score, move, nodes)
 
-strategy_map = { 1: minimax_serial, 
-                2: minimax_top_level_parallel, 
-                3: alpha_beta_serial,
-                4: alpha_beta_bottom_level_parallel,
-                5: alpha_beta_top_level_parallel,
-                6: pvsplit }
+strategy_map = { 1: ("Minimax Serial", minimax_serial), 
+                2: ("Minimax Top Level Parallel", minimax_top_level_parallel), 
+                3: ("Alpha Beta Serial", alpha_beta_serial),
+                4: ("Alpha Beta Bottom Level Parallel", alpha_beta_bottom_level_parallel),
+                5: ("Alpha Beta Top Level Parallel", alpha_beta_top_level_parallel),
+                6: ("PVSplit", pvsplit) }
 
 ###############################################################################
 # User interface
@@ -180,18 +207,31 @@ def print_numpy(np_array):
             output += str(i)
     print(output)
 
+
 def main():
     parser = argparse.ArgumentParser(description="Choose the AI strategy")
     parser.add_argument("-s", "--strategy", type=int, choices=range(1,7), default=1,
                         help="Choose: 1 for Serial Minimax, 2 for Parallel Top Level Minimax, 3 for Serial Alpha Beta, 4 for Parallel Bottom Level Alpha Beta, 5 for Parallel Top Level Parallel, 6 for PVSplit. By default, we use Serial Minimax.")
-    parser.add_argument("-t", "--threads", type=int, default=4,
-                        help="Choose the number of threads to use. By default, we use 4.")
+    parser.add_argument("-t", "--threads", type=int, default=1,
+                        help="Choose the number of threads to use. By default, we use 1.")
+    parser.add_argument("-d", "--depth", type=int, default=5,
+                        help="Choose the depth at which to search the tree. By default, we use 5.")
     args = parser.parse_args()
 
-    if args.threads != None:
-        NUM_THREADS = args.threads
+    # Check if serial algorithm chosen
+    if args.threads > 1 and args.strategy in (1, 3):
+        print("Cannot run serial strategy with multiple threads")
+        return
 
-    strategy = strategy_map[args.strategy]
+    global NUM_THREADS
+    NUM_THREADS = args.threads
+
+    global DEPTH
+    DEPTH = args.depth
+
+    name, func = strategy_map[args.strategy]
+
+    print('Analyzing with ' + name + ' at depth ' + str(DEPTH) + ' with ' + str(NUM_THREADS) + ' thread(s)')
 
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
@@ -211,11 +251,11 @@ def main():
         # This allows us to see the effect of our move.
         print_pos(pos)
         pos = pos.rotate()
-
-        print('Analyzing with ', end='')
         
+        print("Running " + name)
+
         t0 = time.time()
-        (score, move, nodes) = strategy(pos)
+        (score, move, nodes) = func(pos)
         t1 = time.time() - t0
 
         print(score)
