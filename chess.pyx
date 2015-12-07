@@ -2,66 +2,21 @@
 
 import numpy as np
 cimport numpy as np
-from libc.math cimport sqrt
-from libc.stdint cimport uintptr_t, int32_t, uint8_t
-from libc.stdlib cimport malloc, free, abs as c_abs
+
+from libc.stdint cimport int32_t, uint8_t
+from libc.stdlib cimport abs
+
+import pyximport
+pyximport.install()
+
 cimport cython
-from cython.operator cimport dereference as deref
+from constants cimport *
+
 from sunfish import print_numpy
-from openmp cimport omp_lock_t, \
-     omp_init_lock, omp_destroy_lock, \
-     omp_set_lock, omp_unset_lock, omp_get_thread_num
-from libc.stdlib cimport malloc, free
-from cython.parallel import parallel, prange
 
 ###############################################################################
 # Globals
 ###############################################################################
-cdef:
-	# Eval count
-	int EVALCOUNT
-cdef enum:
-
-	# Board length
-	n = 120
-
-	# Piece constants
-	nline = -3
-	space = -2
-	empty = -1
-	opp_pawn = 0
-	opp_knight = 1
-	opp_bishop = 2
-	opp_rook = 3
-	opp_queen = 4
-	opp_king = 5
-	self_pawn = 6
-	self_knight = 7
-	self_bishop = 8
-	self_rook = 9
-	self_queen = 10
-	self_king = 11
-
-	# Number of piece types
-	pieces = 6
-
-	# Our board is represented as a 120 numpy array. The padding allows for
-	# fast detection of moves that don't stay within the board.
-	A1 = 91
-	H1 = 98
-	A8 = 21
-	H8 = 28
-
-	# Direction constants
-	N = -10 
-	E = 1
-	S = 10
-	W = -1
-
-	MAX_DIRS = 8
-	MAXINT = 999999
-	MAX_MOVES = 140
-	MAX_BOARD_SIZE = 120
 
 np_directions = np.array([
 		   [ N, 2*N, N+W, N+E, MAXINT, MAXINT, MAXINT, MAXINT], # Pawn
@@ -129,12 +84,13 @@ np_pst_vals = np.array([
 	 20, 30, 10,  0,  0, 10, 30, 20]
 ], dtype=np.int32)
 
-empty_moves = np.array([[0, 0]] * MAX_MOVES)
-
 cdef:
-	int num_threads = 1
+	# Eval count
+	int EVALCOUNT
 
+	# Directions pieces can go
 	np.int32_t[:, :] directions = np_directions
+
 	# 20,000 cutoff value derived by Claude Shannon
 	np.int32_t[:] piece_vals = np.array([
 		100, 320, 330, 500, 900, 20000], dtype=np.int32
@@ -167,20 +123,12 @@ cdef:
 		dtype = np.int32
 	)
 
-ctypedef struct Position:
-	np.int32_t board[MAX_BOARD_SIZE]
-	np.uint8_t wc[2]
-	np.uint8_t bc[2]
-	np.int32_t ep
-	np.int32_t kp
-	np.int32_t score
-
 cpdef Position init_position(np.int32_t[:] board,
 							np.uint8_t[:] wc,
 							np.uint8_t[:] bc,
 							np.int32_t ep,
 							np.int32_t kp,
-							np.int32_t score):
+							np.int32_t score) nogil:
 	cdef:
 		int i
 		Position pos
@@ -251,22 +199,20 @@ cdef int32_t gen_moves(Position pos, int32_t *sources, int32_t *dests) nogil:
 		int i, j, k
 		np.int32_t d, piece, dest
 		int32_t move_count = 0
-		np.int32_t[:, :] result 
-		# np.int32_t[:] result = np.array([[]], dtype = np.int32)
+
 	# For each of our pieces, iterate through each possible 'ray' of moves,
 	# as defined in the 'directions' map. The rays are broken e.g. by
 	# captures or immediately in case of pieces such as knights.
 
-	# result = []
-	for i in range(n):
+	for i in range(MAX_BOARD_SIZE):
 		piece = pos.board[i]
 
 		# skip if this piece does not belong to player of interest
-		if piece < self_pawn:
+		if piece < SELF_PAWN:
 			continue
 
 		for k in range(MAX_DIRS):
-			d = directions[piece % pieces, k]
+			d = directions[piece % PIECES, k]
 			if d == MAXINT:
 				break
 
@@ -276,66 +222,60 @@ cdef int32_t gen_moves(Position pos, int32_t *sources, int32_t *dests) nogil:
 				dest = pos.board[j]
 
 				# Stay inside the board
-				if dest == nline or dest == space:
+				if dest == NLINE or dest == SPACE:
 					break
 
 				# Castling
-				if i == A1 and dest == self_king and pos.wc[0]:
+				if i == A1 and dest == SELF_KING and pos.wc[0]:
 					sources[move_count] = j
 					dests[move_count] = j-2
 					move_count += 1
-					# with gil:
-					# 	result.append((j, j-2))
 
-				if i == H1 and dest == self_king and pos.wc[1]:
+				if i == H1 and dest == SELF_KING and pos.wc[1]:
 					# result[move_count] = np.array([j, j+2])
 					sources[move_count] = j
 					dests[move_count] = j+2
-					move_count += 1						
-					# with gil:
-					# 	result.append((j, j+2))
+					move_count += 1
 
 				# No friendly captures
-				if dest >= self_pawn:
+				if dest >= SELF_PAWN:
 					break
 
 				# Pawn promotion
-				if piece == self_pawn and d in (N+W, N+E) and dest == empty and j not in (pos.ep, pos.kp):
+				if piece == SELF_PAWN and d in (N+W, N+E) and dest == EMPTY and j not in (pos.ep, pos.kp):
 					break
 
-				if piece == self_pawn and d in (N, 2*N) and dest != empty:
+				if piece == SELF_PAWN and d in (N, 2*N) and dest != EMPTY:
 					break
 
-				if piece == self_pawn and d == 2*N and (i < A1+N or pos.board[i+N] != empty):
+				if piece == SELF_PAWN and d == 2*N and (i < A1+N or pos.board[i+N] != EMPTY):
 					break
 
 				# Move it
-				# result[move_count] = np.array([i, j])
 				sources[move_count] = i
 				dests[move_count] = j
 				move_count += 1
-				# with gil:
-				# 	result.append((i, j))
 
 				# Stop crawlers from sliding
-				if piece in (self_pawn, self_knight, self_king):
+				if piece in (SELF_PAWN, SELF_KNIGHT, SELF_KING):
 					break
 
 				# No sliding after captures
-				if dest >= opp_pawn and dest < self_pawn:
+				if dest >= OPP_PAWN and dest < SELF_PAWN:
 					break
 
 				j += d
 
 	return move_count
 
-
-cdef inline void rotate(Position* pos) nogil:
+# Rotate the board for opponent
+cdef void rotate(Position* pos) nogil:
 	
 	cdef:
 		int i, j 
 		np.int32_t temp
-	for i in range(n/2):
+
+	for i in range(MAX_BOARD_SIZE/2):
 		j = MAX_BOARD_SIZE - i - 1
 		if pos.board[i] >= 0:
 			pos.board[i] = (pos.board[i] + 6) % 12
@@ -358,10 +298,13 @@ cpdef Position _make_move(np.int32_t[:] board,
 									np.int32_t kp,
 									np.int32_t score,
 									np.int32_t[:] move):
+	cdef:
+		Position pos = init_position(board, wc, bc, ep, kp, score)
 
-	return make_move(init_position(board, wc, bc, ep, kp, score), move[0], move[1])
+	return make_move(pos, move[0], move[1])
 
 cdef Position make_move(Position pos, int32_t i, int32_t j) nogil:
+	# Note that i is the source index, and j is the destination index
 	cdef:
 		np.int32_t piece, dest
 		Position new_pos
@@ -370,19 +313,14 @@ cdef Position make_move(Position pos, int32_t i, int32_t j) nogil:
 	piece = pos.board[i]
 	dest = pos.board[j]
 
-	# Create copy of variables and apply 
-	# with gil:
-	# 	print ("\n\n\n\n\n\n\n\n\n")
-	# 	print ("INIT POSITION")
+	# Copy position and apply move
 	new_pos = clone_position(pos.board, 
 							pos.wc, 
 							pos.bc, 
 							0, 0, 0)
-		# print ("\n\n\n\n\n\n\n\n\n")
-		# print ("DONE")
 
-	new_pos.board[j] = pos.board[i]
-	new_pos.board[i] = empty
+	new_pos.board[j] = piece
+	new_pos.board[i] = EMPTY
 
 	# Castling rights
 	if i == A1:
@@ -402,22 +340,22 @@ cdef Position make_move(Position pos, int32_t i, int32_t j) nogil:
 		new_pos.bc[1] = pos.bc[1]
 
 	# Castling
-	if piece == self_king:
+	if piece == SELF_KING:
 		new_pos.wc[0] = 0
 		new_pos.wc[1] = 0
-		if c_abs(j-i) == 2:
+		if abs(j-i) == 2:
 			new_pos.kp = (i+j)//2
-			new_pos.board[A1 if j < i else H1] = empty
-			new_pos.board[new_pos.kp] = self_rook
+			new_pos.board[A1 if j < i else H1] = EMPTY
+			new_pos.board[new_pos.kp] = SELF_ROOK
 
 	# Pawn promotion
-	if piece == self_pawn:
+	if piece == SELF_PAWN:
 		if A8 <= j and j <= H8:
-			new_pos.board[j] = self_queen
+			new_pos.board[j] = SELF_QUEEN
 		if j - i == 2*N:
 			ep = i + N
-		if j - i in (N+W, N+E) and dest == empty:
-			new_pos.board[j+S] = empty
+		if j - i in (N+W, N+E) and dest == EMPTY:
+			new_pos.board[j+S] = EMPTY
 
 	# Return result
 	new_pos.score = pos.score + evaluate(new_pos.board)
@@ -435,7 +373,6 @@ cdef np.int32_t total_material(np.int32_t* board) nogil:
 
 	return amt
 
-
 cdef np.int32_t is_endgame(np.int32_t* board) nogil:
 	cdef np.int32_t ret_val = 1
 	# material cutoff
@@ -445,14 +382,16 @@ cdef np.int32_t is_endgame(np.int32_t* board) nogil:
 
 	return ret_val
 
-
 cdef np.int32_t evaluate(np.int32_t* board) nogil:
 	cdef:
 		np.int32_t score = 0
 		np.int32_t row, col, pos, piece, endgame_bool, idx
+	
 	endgame_bool = is_endgame(board)
+	
 	global EVALCOUNT
 	EVALCOUNT += 1
+	
 	for idx in range(120):
 		piece = board[idx]
 		
@@ -487,343 +426,5 @@ cdef np.int32_t evaluate(np.int32_t* board) nogil:
 
 	return score
 
-cpdef int printEval():
+cpdef int print_eval():
 	return EVALCOUNT
-
-# Python wrapper for minimax_helper
-cpdef int _minimax_helper(np.int32_t[:] board,
-									np.uint8_t[:] wc,
-									np.uint8_t[:] bc,
-									np.int32_t ep,
-									np.int32_t kp,
-									np.int32_t score,
-									int agentIndex,
-									int depth):
-
-	return minimax_helper(init_position(board, wc, bc, ep, kp, score), agentIndex, depth)
-
-cdef int minimax_helper(Position pos, int agentIndex, int depth) nogil:
-	# Right now this is all within the GIL. The only way I can see this getting fixed
-	# is if we rewrite all the methods as cython functions on numpy arrays
-	cdef:
-		int i, ret, bestValue
-		Position new_pos
-		int32_t sources[MAX_MOVES]
-		int32_t dests[MAX_MOVES]
-		int32_t move_count
-	if depth == 0:
-		if agentIndex == 0:
-			ret = evaluate(pos.board)
-			#with gil: print ("agent 0 ", ret)
-			# with gil:
-			# 	if ret > 2000:
-			# 		print "Agent index 0"
-			# 		raw_input()
-			# 		print_numpy(pos.board)
-			# 		print (ret)
-			# 		print ("----------")
-			return ret
-		else:
-			ret = evaluate(pos.board)
-			# with gil: print ("agent 1 ", ret)
-			# with gil:
-			# 	if ret < -2000:
-			# 		raw_input()
-			# 		print_numpy(pos.board)
-			# 		print (ret)
-			# 		print ("-----------")
-			return -1 * ret
-	
-	move_count = gen_moves(pos, sources, dests)
-	# Agent index 0 is the computer, trying to maximize the scoreboard
-	if agentIndex == 0:
-		bestValue = -100000
-		for i in range(move_count):
-			new_pos = make_move(pos, sources[i], dests[i])
-			rotate(&new_pos)
-			bestValue = max(bestValue, minimax_helper(new_pos, 1, depth - 1))
-		return bestValue
-
-
-	# Agent index 1 is the human, trying to minimize the scoreboard
-	elif agentIndex == 1:
-		bestValue = 1000000
-		for i in range(move_count):
-			new_pos = make_move(pos, sources[i], dests[i])
-			rotate(&new_pos)
-			bestValue = min(bestValue, minimax_helper(new_pos, 0, depth -1))
-	return bestValue
-
-
-
-# Python wrapper for alpha beta helper
-cpdef _pvsplit_helper(np.int32_t[:] board,
-									np.uint8_t[:] wc,
-									np.uint8_t[:] bc,
-									np.int32_t ep,
-									np.int32_t kp,
-									np.int32_t score,
-									int agentIndex,
-									int depth,
-									int alpha,
-									int beta):
-	cdef int32_t move[2]
-	return (PVSplit(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta, move), move)
-
-cdef int PVSplit(Position pos, int agentIndex, int depth, int a, int b, int32_t *move) nogil:
-	cdef:
-		int i, j, max_idx, max_eval, curr_eval
-		np.int32_t[:] alpha, beta, res, score
-		Position new_pos
-		int32_t move_count, temp
-		int32_t sources[MAX_MOVES]
-		int32_t dests[MAX_MOVES]
-		Position positions[MAX_MOVES]
-		omp_lock_t eval_lock #= <omp_lock_t *> malloc(sizeof(omp_lock_t))
-
-	move_count = gen_moves(pos, sources, dests)
-
-	if agentIndex == 0:
-		if depth == 0:
-			return evaluate(pos.board)
-		
-		max_eval = -100000
-		for i in range(move_count):
-			positions[i] = make_move(pos, sources[i], dests[i])
-			rotate(&positions[i])
-			curr_eval = evaluate(positions[i].board)
-			if curr_eval > max_eval:
-				max_eval = curr_eval
-				max_idx = i
-
-		with gil:
-			alpha = np.array([a], dtype=np.int32)
-			beta = np.array([b], dtype=np.int32)
-			res = np.array([-100000], dtype=np.int32)
-			score = np.array([-100000], dtype=np.int32)
-
-		res[0] = max(res[0],
-			PVSplit(positions[max_idx], 1, depth-1, alpha[0], beta[0], move))
-		alpha[0] = max(alpha[0], res[0])
-		score[0] = res[0]
-		omp_init_lock(&eval_lock)
-		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
-			if i == max_idx:
-				continue
-			temp = AlphaBeta(positions[i], 1, depth - 1, alpha[0], beta[0])
-			omp_set_lock(&eval_lock)
-			if temp > score[0]:
-				score[0] = temp
-				move[0] = sources[i]
-				move[1] = dests[i]
-			if temp >= beta[0]:
-				return temp
-			alpha[0] = max(alpha[0], temp)
-			omp_unset_lock(&eval_lock)
-		omp_destroy_lock(&eval_lock)
-		return score[0]
-	else:
-		if depth == 0:
-			return -1*evaluate(pos.board)
-
-		max_eval = 100000
-		for i in range(move_count):
-			positions[i] = make_move(pos, sources[i], dests[i])
-			rotate(&positions[i])
-			curr_eval = -1*evaluate(positions[i].board)
-			if curr_eval < max_eval:
-				max_eval = curr_eval
-				max_idx = i
-
-		with gil:
-			alpha = np.array([a], dtype=np.int32)
-			beta = np.array([b], dtype=np.int32)
-			res = np.array([100000], dtype=np.int32)
-			score = np.array([100000], dtype=np.int32)
-
-		res[0] = min(res[0],
-			PVSplit(positions[max_idx], 0, depth-1, alpha[0], beta[0], move))
-		beta[0] = min(beta[0], res[0])
-		score[0] = res[0]
-		omp_init_lock(&eval_lock)
-		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
-			if i == max_idx:
-				continue
-			temp = AlphaBeta(positions[i], 0, depth - 1, alpha[0], beta[0])
-			omp_set_lock(&eval_lock)
-			score[0] = min(temp, score[0])
-			if temp <= alpha[0]:
-				return temp
-			beta[0] = min(beta[0], temp)
-			omp_unset_lock(&eval_lock)
-		omp_destroy_lock(&eval_lock)
-		return score[0]
-
-cpdef int _alphabeta_helper(np.int32_t[:] board,
-									np.uint8_t[:] wc,
-									np.uint8_t[:] bc,
-									np.int32_t ep,
-									np.int32_t kp,
-									np.int32_t score,
-									int agentIndex,
-									int depth,
-									int alpha,
-									int beta):
-	return AlphaBeta(init_position(board, wc, bc, ep, kp, score), agentIndex, depth, alpha, beta)
-
-cpdef int AlphaBeta(Position pos, int agentIndex, int depth, int alpha, int beta) nogil:
-	cdef:
-		int32_t sources[MAX_MOVES]
-		int32_t dests[MAX_MOVES]
-		int32_t move_count
-		int i, ret, bestValue, v, num_moves, j
-		int* temp
-		#omp_lock_t* eval_lock = <omp_lock_t *> malloc(sizeof(omp_lock_t))
-
-	if depth == 0:
-		if agentIndex == 0:
-			ret = evaluate(pos.board)
-			#with gil: print ("agent 0 ", ret)
-			# with gil:
-			# 	print_numpy(pos.board)
-			# 	print (ret)
-			# 	print ("----------")
-			return ret
-		else:
-			ret = evaluate(pos.board)
-			# with gil: print ("agent 1 ", ret)
-			# with gil:
-			# 	print_numpy(pos.board)
-			# 	print (ret)
-			# 	print ("-----------")
-			return -1 * ret
-
-	# An attempt at parallelization!
-	# elif depth == 1:
-	# 	# Assumes it is an even depth to start with
-	# 	# agentIndex 0 right now
-	# 	omp_init_lock(eval_lock)
-	# 	v = -100000
-	# 	moves = gen_moves(pos)
-	# 	num_moves = moves.shape[0]
-	# 	temp = <int *> malloc(sizeof(int) * num_moves)
-
-	# 	for i in prange(num_moves, num_threads = 15, nogil=True):
-	# 		# Check if we actually need to evaluate this
-	# 		j = evaluate(rotate(make_move(pos, moves[i])).board)
-	# 		#with gil:
-	# 		#	print j
-	# 		#omp_set_lock(eval_lock)
-	# 		if (-1 * j) > beta:
-	# 			#with gil:
-	# 			#	print ("########")
-	# 			return -1 * j
-	# 		#omp_unset_lock(eval_lock)
-	# 		temp[i] = j #AlphaBeta(rotate(make_move(pos, moves[i])), 0, depth - 1, alpha, beta)
-
-		
-	# 	# if agentIndex == 1:
-	# 	# 	v = 10000
-	# 	# 	for i in range(num_moves):
-	# 	# 		#with gil:
-	# 	# 			#print(temp[i])
-	# 	# 		v = min(
-	# 	# 			v,
-	# 	# 			temp[i]
-	# 	# 		)
-	# 	# 	#Too negative for max to allow this
-	# 	# 		if v < alpha:
-	# 	# 			return v
-	# 	# 		beta = min(beta, v)
-
-	# 	# elif agentIndex == 0:
-	# 	# 	v = -10000
-	# 	for i in range(num_moves):
-	# 		#with gil:
-	# 		#	print("Here")
-	# 		v = max(
-	# 			v,
-	# 			-1 * temp[i]
-	# 		)
-	# 		#with gil:
-	# 		#	print(v)
-	# 	# 		# Prune the rest of the children, don't need to look
-	# 	# 		if v > beta:
-	# 	# 			with gil:
-	# 	# 				print("#########")
-	# 	#return v
-	# 	# 		alpha = max(alpha, v)
-
-	# 	#omp_destroy_lock(eval_lock)
-	# 	#free(<omp_lock_t *> eval_lock)
-	# 	#with gil:
-	# 	#	print("-----------")
-	# 	free(temp)
-	# 	return v
-
-	# Agent 0 is the computer, trying to maximize
-	if agentIndex == 0:
-		v = -100000
-		move_count = gen_moves(pos, sources, dests)
-		for i in range(move_count):
-			new_pos = make_move(pos, sources[i], dests[i])
-			rotate(&new_pos)
-			v = max(
-				v,
-				AlphaBeta(new_pos, 1, depth - 1, alpha, beta)
-			)
-			# Prune the rest of the children, don't need to look
-			if v > beta:
-				return v
-			alpha = max(alpha, v)
-		return v
-
-	# Agent 1 is the human, trying to minimize
-	elif agentIndex == 1:
-		v = 100000
-		move_count = gen_moves(pos, sources, dests)
-		for i in range(move_count):
-			new_pos = make_move(pos, sources[i], dests[i])
-			rotate(&new_pos)
-			v = min(
-				v,
-				AlphaBeta(new_pos, 0, depth - 1, alpha, beta)
-			)
-			# Too negative for max to allow this
-			if v < alpha:
-				return v
-			beta = min(beta, v)
-		return v
-
-# cpdef int PVSplit(Position pos, int alpha, int beta):
-# 	cdef:
-# 		np.int32_t[:] move
-# 		np.int32_t[:,:] moves
-# 		int i, ret, bestVal, score
-
-# 	if depth == 0:
-# 		if agentIndex == 0:
-# 			ret = evaluate(pos.board)
-# 			#with gil: print ("agent 0 ", ret)
-# 			# with gil:
-# 			# 	print_numpy(pos.board)
-# 			# 	print (ret)
-# 			# 	print ("----------")
-# 			return ret
-# 		else:
-# 			ret = evaluate(pos.board)
-# 			# with gil: print ("agent 1 ", ret)
-# 			# with gil:
-# 			# 	print_numpy(pos.board)
-# 			# 	print (ret)
-# 			# 	print ("-----------")
-# 			return -1 * ret
-
-# 	moves = gen_moves(pos)
-# 	score = PVSplit(moves[0], alpha, beta)
-# 	if score > beta:
-# 		return beta
-# 	if score > alpha:
-# 		alpha = score
-
-

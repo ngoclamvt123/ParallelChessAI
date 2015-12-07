@@ -1,24 +1,30 @@
 #!/usr/bin/env pypy
 # -*- coding: utf-8 -*-
-
 from __future__ import print_function
 import re
 import sys
 import os.path
 sys.path.append('util')
+
 from itertools import count
 from collections import OrderedDict, namedtuple
+
 import set_compiler
 set_compiler.install()
-import pyximport
 import numpy as np
+import pyximport
 pyximport.install(setup_args={"include_dirs":np.get_include()},
                   reload_support=True)
-import chess
+
+from chess import print_eval, _make_move, _gen_moves
+from pvsplit import _pvsplit
 import time
 
 # This is the max depth we want our minimax to search
-DEPTH = 7
+DEPTH = 6
+
+# This is the number of threads at which we run our AI
+NUM_THREADS = 2
 
 # Our board is represented as a 120 character string. The padding allows for
 # fast detection of moves that don't stay within the board.
@@ -63,7 +69,7 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
 
     def gen_moves(self):
         # Call cython function to generate moves
-        move_count, sources, dests = chess._gen_moves(self.numpyify(), 
+        move_count, sources, dests = _gen_moves(self.numpyify(), 
                                                     np.array(self.wc).astype(np.uint8), 
                                                     np.array(self.bc).astype(np.uint8), 
                                                     self.ep, 
@@ -77,13 +83,13 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
             self.bc, self.wc, 119-self.ep, 119-self.kp)
 
     def move(self, move):
-        pos = chess._make_move(self.numpyify(), 
-                                np.array(self.wc).astype(np.uint8), 
-                                np.array(self.bc).astype(np.uint8), 
-                                self.ep, 
-                                self.kp,
-                                self.score, 
-                                np.array(move).astype(np.int32))
+        pos = _make_move(self.numpyify(), 
+                        np.array(self.wc).astype(np.uint8), 
+                        np.array(self.bc).astype(np.uint8), 
+                        self.ep, 
+                        self.kp,
+                        self.score, 
+                        np.array(move).astype(np.int32))
         return Position(self.stringify(pos['board']), pos['score'], tuple(map(lambda x: bool(x), pos['wc'])), tuple(map(lambda x: bool(x), pos['bc'])), pos['ep'], pos['kp'])
 
     def numpyify(self):
@@ -93,8 +99,10 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
     def stringify(self, np_board):
         return ''.join(map(lambda c: int_map[c], np_board))
 
-    def pvsplit(self):
-        (score, move) = chess._pvsplit_helper(self.numpyify(), 
+    # Techniques to choose move
+
+    def pv_split(self):
+        (score, move) = _pvsplit(self.numpyify(), 
                             np.array(self.wc).astype(np.uint8), 
                             np.array(self.bc).astype(np.uint8), 
                             self.ep, 
@@ -103,8 +111,9 @@ class Position(namedtuple('Position', 'board score wc bc ep kp')):
                             0, 
                             DEPTH,
                             -1000000,
-                            1000000)
-        nodes = chess.printEval()
+                            1000000,
+                            NUM_THREADS)
+        nodes = print_eval()
         return (score, move, nodes)
 
 
@@ -145,7 +154,6 @@ def main():
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
     while True:
         print_pos(pos)
-
         # We query the user until she enters a legal move.
         move = None
         while move not in pos.gen_moves():
@@ -165,7 +173,7 @@ def main():
         t0 = time.time()
         print('Analyzing')
 
-        (score, move, nodes) = pos.pvsplit()
+        (score, move, nodes) = pos.pv_split()
 
         print(score)
         print("Number of Nodes Explored " + str(nodes))
