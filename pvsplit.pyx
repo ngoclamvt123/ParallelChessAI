@@ -48,6 +48,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		int32_t dests[MAX_MOVES]
 		Position positions[MAX_MOVES]
 		omp_lock_t eval_lock
+		int32_t new_move[2]
 
 	move_count = gen_moves(pos, sources, dests)
 	if agentIndex == 0:
@@ -77,7 +78,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
 			if i == max_idx:
 				continue
-			temp = alpha_beta_serial(positions[i], 1, depth - 1, alpha[0], beta[0], move)
+			temp = alpha_beta_serial(positions[i], 1, depth - 1, alpha[0], beta[0], new_move)
 			omp_set_lock(&eval_lock)
 			if temp > score[0]:
 				score[0] = temp
@@ -119,7 +120,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
 			if i == max_idx:
 				continue
-			temp = alpha_beta_serial(positions[i], 0, depth - 1, alpha[0], beta[0], move)
+			temp = alpha_beta_serial(positions[i], 0, depth - 1, alpha[0], beta[0], new_move)
 			omp_set_lock(&eval_lock)
 			score[0] = min(temp, score[0])
 			if temp <= alpha[0]:

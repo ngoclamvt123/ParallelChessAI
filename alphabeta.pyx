@@ -219,8 +219,12 @@ cdef int alpha_beta_top_level_parallel(Position pos, int agentIndex, int depth, 
 		int32_t sources[MAX_MOVES]
 		int32_t dests[MAX_MOVES]
 		int32_t move_count
-		int temp[1], alpha[1], beta[1]
-		int i, ret, bestValue, v[1], j
+		int32_t new_move[2]
+		int temp[1]
+		int alpha[1]
+		int beta[1]
+		int i, ret, bestValue, j
+		int v[1]
 		omp_lock_t eval_lock
 		Position new_pos
 
@@ -240,11 +244,9 @@ cdef int alpha_beta_top_level_parallel(Position pos, int agentIndex, int depth, 
 		v[0] = -100000
 		move_count = gen_moves(pos, sources, dests)
 		for i in prange(move_count, num_threads=num_threads, nogil=True):
-			# omp_set_lock(&eval_lock)
 			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
-			# omp_unset_lock(&eval_lock)
-			temp[0] = alpha_beta_serial(new_pos, 1, depth - 1, alpha[0], beta[0], move)
+			temp[0] = alpha_beta_serial(new_pos, 1, depth - 1, alpha[0], beta[0], new_move)
 			omp_set_lock(&eval_lock)
 			v[0] = max(v[0], temp[0])
 			# Prune the rest of the children, don't need to look
@@ -265,11 +267,9 @@ cdef int alpha_beta_top_level_parallel(Position pos, int agentIndex, int depth, 
 		v[0] = 100000
 		move_count = gen_moves(pos, sources, dests)
 		for i in prange(move_count, num_threads=num_threads, nogil=True):
-			# omp_set_lock(&eval_lock)
 			new_pos = make_move(pos, sources[i], dests[i])
 			rotate(&new_pos)
-			# omp_unset_lock(&eval_lock)
-			temp[0] = alpha_beta_serial(new_pos, 0, depth - 1, alpha[0], beta[0], move)
+			temp[0] = alpha_beta_serial(new_pos, 0, depth - 1, alpha[0], beta[0], new_move)
 			omp_set_lock(&eval_lock)
 			v[0] = min(v[0], temp[0])
 			# Too negative for max to allow this

@@ -152,10 +152,11 @@ cdef int min_helper_function(Position pos, int32_t source, int32_t dest, int dep
 	cdef:
 		Position new_pos
 		int value
+		int32_t new_move[2]
 
 	new_pos = make_move(pos, source, dest)
 	rotate(&new_pos)
-	value = minimax_serial(new_pos, 0, depth-1, move)
+	value = minimax_serial(new_pos, 0, depth-1, new_move)
 	omp_set_lock(&eval_lock)
 	bestValue = max(bestValue, value)
 	omp_unset_lock(&eval_lock)
@@ -165,10 +166,11 @@ cdef int max_helper_function(Position pos, int source, int dest, int depth, int 
 	cdef:
 		Position new_pos
 		int value
+		int32_t new_move[2]
 
 	new_pos = make_move(pos, source, dest)
 	rotate(&new_pos)
-	value = minimax_serial(new_pos, 1, depth-1, move)
+	value = minimax_serial(new_pos, 1, depth-1, new_move)
 	omp_set_lock(&eval_lock)
 	if value > bestValue:
 		bestValue = value
