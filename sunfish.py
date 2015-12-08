@@ -235,7 +235,7 @@ def print_numpy(np_array):
 def main():
     parser = argparse.ArgumentParser(description="Choose the AI strategy")
     parser.add_argument("-s", "--strategy", type=int, choices=range(1,7), default=1,
-                        help="Choose: 1 for Serial Minimax, 2 for Parallel Top Level Minimax, 3 for Serial Alpha Beta, 4 for Parallel Bottom Level Alpha Beta, 5 for Parallel Top Level Parallel, 6 for PVSplit. By default, we use Serial Minimax.")
+                        help="Choose: 1 for Serial Minimax, 2 for Parallel Top Level Minimax, 3 for Serial Alpha Beta, 4 for Parallel Bottom Level Alpha Beta, 5 for Parallel Top Level Alpha Beta, 6 for PVSplit. By default, we use Serial Minimax.")
     parser.add_argument("-t", "--threads", type=int, default=1,
                         help="Choose the number of threads to use. By default, we use 1.")
     parser.add_argument("-d", "--depth", type=int, default=5,
