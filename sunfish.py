@@ -19,7 +19,7 @@ pyximport.install(setup_args={"include_dirs":np.get_include()},
 
 from chess import print_eval, _make_move, _gen_moves
 from minimax import _minimax_serial, _minimax_top_level_parallel
-from alphabeta import _alpha_beta_serial
+from alphabeta import _alpha_beta_serial, _alpha_beta_bottom_level_parallel
 from pvsplit import _pvsplit
 import time
 
@@ -146,7 +146,19 @@ def alpha_beta_serial(pos):
     return (score, move, nodes)
 
 def alpha_beta_bottom_level_parallel(pos):
-    pass
+    (score, move) = _alpha_beta_bottom_level_parallel(pos.numpyify(), 
+                        np.array(pos.wc).astype(np.uint8), 
+                        np.array(pos.bc).astype(np.uint8), 
+                        pos.ep, 
+                        pos.kp,
+                        pos.score, 
+                        0, 
+                        DEPTH,
+                        NUM_THREADS,
+                        -100000,
+                        100000)
+    nodes = print_eval()
+    return (score, move, nodes)
 
 def alpha_beta_top_level_parallel(pos):
     pass
