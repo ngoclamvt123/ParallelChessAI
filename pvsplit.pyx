@@ -40,7 +40,7 @@ cpdef _pvsplit(np.int32_t[:] board,
 
 cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_threads, int32_t *move) nogil:
 	cdef:
-		int i, j, max_idx, max_eval, curr_eval
+		int i, j, best_idx, best_value, curr_eval
 		np.int32_t[:] alpha, beta, res, score
 		Position new_pos
 		int32_t move_count, temp
@@ -55,14 +55,14 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		if depth == 0:
 			return evaluate(pos.board)
 		
-		max_eval = -100000
+		best_value = -100000
 		for i in range(move_count):
 			positions[i] = make_move(pos, sources[i], dests[i])
 			rotate(&positions[i])
 			curr_eval = evaluate(positions[i].board)
-			if curr_eval > max_eval:
-				max_eval = curr_eval
-				max_idx = i
+			if curr_eval > best_value:
+				best_value = curr_eval
+				best_idx = i
 
 		with gil:
 			alpha = np.array([a], dtype=np.int32)
@@ -71,12 +71,12 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 			score = np.array([-100000], dtype=np.int32)
 
 		res[0] = max(res[0],
-			pvsplit(positions[max_idx], 1, depth-1, alpha[0], beta[0], num_threads, move))
+			pvsplit(positions[best_idx], 1, depth-1, alpha[0], beta[0], num_threads, move))
 		alpha[0] = max(alpha[0], res[0])
 		score[0] = res[0]
 		omp_init_lock(&eval_lock)
 		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
-			if i == max_idx:
+			if i == best_idx:
 				continue
 			temp = alpha_beta_serial(positions[i], 1, depth - 1, alpha[0], beta[0], new_move)
 			omp_set_lock(&eval_lock)
@@ -96,14 +96,14 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		if depth == 0:
 			return -1*evaluate(pos.board)
 
-		max_eval = 100000
+		best_value = 100000
 		for i in range(move_count):
 			positions[i] = make_move(pos, sources[i], dests[i])
 			rotate(&positions[i])
 			curr_eval = -1*evaluate(positions[i].board)
-			if curr_eval < max_eval:
-				max_eval = curr_eval
-				max_idx = i
+			if curr_eval < best_value:
+				best_value = curr_eval
+				best_idx = i
 
 		# TODO try to get rid of this
 		with gil:
@@ -113,12 +113,12 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 			score = np.array([100000], dtype=np.int32)
 
 		res[0] = min(res[0],
-			pvsplit(positions[max_idx], 0, depth-1, alpha[0], beta[0], num_threads, move))
+			pvsplit(positions[best_idx], 0, depth-1, alpha[0], beta[0], num_threads, move))
 		beta[0] = min(beta[0], res[0])
 		score[0] = res[0]
 		omp_init_lock(&eval_lock)
 		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
-			if i == max_idx:
+			if i == best_idx:
 				continue
 			temp = alpha_beta_serial(positions[i], 0, depth - 1, alpha[0], beta[0], new_move)
 			omp_set_lock(&eval_lock)
