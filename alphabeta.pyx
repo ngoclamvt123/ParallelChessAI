@@ -195,3 +195,89 @@ cdef int alpha_beta_bottom_level_parallel(Position pos, int agentIndex, int dept
 				return v
 			beta = min(beta, v)
 		return v
+
+cpdef _alpha_beta_top_level_parallel(np.int32_t[:] board,
+									np.uint8_t[:] wc,
+									np.uint8_t[:] bc,
+									np.int32_t ep,
+									np.int32_t kp,
+									np.int32_t score,
+									int agentIndex,
+									int depth,
+									int num_threads,
+									int alpha,
+									int beta):
+	cdef:
+		int32_t move[2]
+		Position pos = init_position(board, wc, bc, ep, kp, score)
+		int bestValue = alpha_beta_top_level_parallel(pos, agentIndex, depth, num_threads, alpha, beta, move)
+
+	return (bestValue, move)
+
+cdef int alpha_beta_top_level_parallel(Position pos, int agentIndex, int depth, int num_threads, int a, int b, int32_t *move) nogil:
+	cdef:
+		int32_t sources[MAX_MOVES]
+		int32_t dests[MAX_MOVES]
+		int32_t move_count
+		int temp[1], alpha[1], beta[1]
+		int i, ret, bestValue, v[1], j
+		omp_lock_t eval_lock
+		Position new_pos
+
+	alpha[0] = a
+	beta[0] = b
+
+	if depth == 0:
+		if agentIndex == 0:
+			return evaluate(pos.board)
+		else:
+			return -1 * evaluate(pos.board)
+
+	omp_init_lock(&eval_lock)
+
+	# Agent 0 is the computer, trying to maximize
+	if agentIndex == 0:
+		v[0] = -100000
+		move_count = gen_moves(pos, sources, dests)
+		for i in prange(move_count, num_threads=num_threads, nogil=True):
+			# omp_set_lock(&eval_lock)
+			new_pos = make_move(pos, sources[i], dests[i])
+			rotate(&new_pos)
+			# omp_unset_lock(&eval_lock)
+			temp[0] = alpha_beta_serial(new_pos, 1, depth - 1, alpha[0], beta[0], move)
+			omp_set_lock(&eval_lock)
+			v[0] = max(v[0], temp[0])
+			# Prune the rest of the children, don't need to look
+			if v[0] > beta[0]:
+				omp_unset_lock(&eval_lock)
+				omp_destroy_lock(&eval_lock)
+				return v[0]
+			if v[0] > alpha[0]:
+				alpha[0] = v[0]
+				move[0] = sources[i]
+				move[1] = dests[i]
+			omp_unset_lock(&eval_lock)
+		omp_destroy_lock(&eval_lock)
+		return v[0]
+
+	# Agent 1 is the human, trying to minimize
+	elif agentIndex == 1:
+		v[0] = 100000
+		move_count = gen_moves(pos, sources, dests)
+		for i in prange(move_count, num_threads=num_threads, nogil=True):
+			# omp_set_lock(&eval_lock)
+			new_pos = make_move(pos, sources[i], dests[i])
+			rotate(&new_pos)
+			# omp_unset_lock(&eval_lock)
+			temp[0] = alpha_beta_serial(new_pos, 0, depth - 1, alpha[0], beta[0], move)
+			omp_set_lock(&eval_lock)
+			v[0] = min(v[0], temp[0])
+			# Too negative for max to allow this
+			if v[0] < alpha[0]:
+				omp_unset_lock(&eval_lock)
+				omp_destroy_lock(&eval_lock)
+				return v[0]
+			beta[0] = min(beta[0], v[0])
+			omp_unset_lock(&eval_lock)
+		omp_destroy_lock(&eval_lock)
+		return v[0]

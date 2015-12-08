@@ -84,6 +84,8 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 				move[0] = sources[i]
 				move[1] = dests[i]
 			if temp >= beta[0]:
+				omp_unset_lock(&eval_lock)
+				omp_destroy_lock(&eval_lock)
 				return temp
 			alpha[0] = max(alpha[0], temp)
 			omp_unset_lock(&eval_lock)
@@ -121,6 +123,8 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 			omp_set_lock(&eval_lock)
 			score[0] = min(temp, score[0])
 			if temp <= alpha[0]:
+				omp_unset_lock(&eval_lock)
+				omp_destroy_lock(&eval_lock)
 				return temp
 			beta[0] = min(beta[0], temp)
 			omp_unset_lock(&eval_lock)

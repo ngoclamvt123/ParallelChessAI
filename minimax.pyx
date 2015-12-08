@@ -130,7 +130,6 @@ cdef int minimax_top_level_parallel(Position pos, int agentIndex, int depth, int
 			# bestValue[0] = max(bestValue[0], minimax_serial(new_pos, 1, depth-1, 0))
 			# omp_unset_lock(&eval_lock)
 			bestValue[0] = max_helper_function(pos, sources[i], dests[i], depth, bestValue[0], move, eval_lock)
-
 	# Agent index 1 is the human, trying to minimize the scoreboard
 	elif agentIndex == 1:
 		bestValue[0] = 100000
@@ -158,10 +157,7 @@ cdef int min_helper_function(Position pos, int32_t source, int32_t dest, int dep
 	rotate(&new_pos)
 	value = minimax_serial(new_pos, 0, depth-1, move)
 	omp_set_lock(&eval_lock)
-	if value < bestValue:
-		bestValue = value
-		move[0] = source
-		move[1] = dest
+	bestValue = max(bestValue, value)
 	omp_unset_lock(&eval_lock)
 	return bestValue
 
