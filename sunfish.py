@@ -247,6 +247,16 @@ def main():
         print("Cannot run serial strategy with multiple threads")
         return
 
+    # Check if depth valid
+    if args.depth <= 0:
+        print("Depth must be a positive integer")
+        return
+
+    # Check if number of threads valid
+    if args.threads <= 0:
+        print("Number of threads must be a positive integer")
+        return
+
     global NUM_THREADS
     NUM_THREADS = args.threads
 
