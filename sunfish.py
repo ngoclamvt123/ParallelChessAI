@@ -290,10 +290,8 @@ def main():
 
         t0 = time.time()
         (score, move, nodes) = func(pos)
-        print(score, move, nodes)
         t1 = time.time() - t0
 
-        print(score)
         print("Number of Nodes Explored " + str(nodes))
         print("Time to move")
         print(str(t1))
