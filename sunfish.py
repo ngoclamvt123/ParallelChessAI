@@ -215,8 +215,8 @@ def render(i):
 
 def print_pos(pos):
     print()
-    uni_pieces = {'R':'♜', 'N':'♞', 'B':'♝', 'Q':'♛', 'K':'♚', 'P':'♟',
-                  'r':'♖', 'n':'♘', 'b':'♗', 'q':'♕', 'k':'♔', 'p':'♙', '.':'·'}
+    uni_pieces = {'R':'♖', 'N':'♘', 'B':'♗', 'Q':'♕', 'K':'♔', 'P':'♙',
+                  'r':'♜', 'n':'♞', 'b':'♝', 'q':'♛', 'k':'♚', 'p':'♟', '.':'·'}
     for i, row in enumerate(pos.board.strip().split('\n ')):
         print(' ', 8-i, ' '.join(uni_pieces.get(p, p) for p in row))
     print('    a b c d e f g h \n\n')
@@ -287,13 +287,14 @@ def main():
         pos = pos.rotate()
         
         print("Running " + name)
+        print()
 
         t0 = time.time()
         (score, move, nodes) = func(pos)
         t1 = time.time() - t0
 
-        print("Number of Nodes Explored: " + str(nodes))
-        print("Time to move: " + str(t1))
+        print("Number of board states explored: " + str(nodes))
+        print("Time to move: " + str(t1) + " seconds")
         
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.

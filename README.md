@@ -1,22 +1,20 @@
-Sunfish
+Parallel Chess AI
 =======
-Sunfish is a simple, but strong chess engine, written in Python, mostly for teaching purposes. Without tables and its simple interface, it takes up just 111 lines of code!
-
-The clarity of the Sunfish code provides a great platform for experimenting, be it with evaluation functions, search extensions or anything. Fork it today and see what you can do!
+This is a Chess AI that has 6 different AI strategies implemented.
 
 Screenshot
 ==========
 
     My move: g8f6
     
-      8 ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
-      7 ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+      8 ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+      7 ♟ ♟ ♟ ♟ ♟ ♟ ♟ ♟
       6 · · · · · · · ·
       5 · · · · · · · ·
-      4 · · · · ♟ · · ·
+      4 · · · · · · · ·
       3 · · · · · · · ·
-      2 ♟ ♟ ♟ ♟ · ♟ ♟ ♟
-      1 ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+      2 ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+      1 ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
         a b c d e f g h
 
 
@@ -24,31 +22,13 @@ Screenshot
 
 Run it!
 =======
-Sunfish is self contained in the `sunfish.py` file from the repository. I recommend running it with `pypy` for optimal performance.
+To use the program, clone this repository. Enter the cloned folder in your terminal, and run the command `python sunfish.py` to use the program with default options. You can also specify options such as the AI strategy, the depth at which to evaluate the minimax tree, and the number of threads to run the strategy if it is one that is parallelized. The strategy can be specified with the flag `--strategy` (or `-s` for short) followed by an integer in the following mapping:
 
-It is also possible to run Sunfish as an [XBoard](http://www.gnu.org/software/xboard/)/CECP engine in [PyChess](http://pychess.org), [Arena](http://www.playwitharena.com) or your chess interface of choice. Just add the command `pypy -u xboard.py`. Ruxy Sylwyka has [a note on making it all work on Windows](http://www.talkchess.com/forum/viewtopic.php?topic_view=threads&p=560462).
+*   1 for Serial Minimax
+*   2 for Parallel Top Level Minimax
+*   3 for Serial Alpha Beta
+*   4 for Parallel Bottom Level Alpha Beta
+*   5 for Parallel Top Level Alpha Beta
+*   6 for PVSplit
 
-![Arena Screenshot](http://s29.postimg.org/89gnk99d3/Clipboard01.png)
-
-Features
-===========
-1. Built around the simple, but deadly efficient MTD-bi search algorithm.
-2. Filled with classic as well as modern 'chess engine tricks' for simpler and faster code.
-3. Easily adaptive evaluation function through Piece Square Tables.
-4. Uses standard Python collections and data structures for clarity and efficiency.
-
-Limitations
-===========
-Sunfish supports castling, en passant, and promotion. It doesn't however do minor promotion or draws of any kind. All input must be done in simple 'two coordinate' notation, as shown in the screenshot.
-
-On the technical side there are a lot of features that could be interesting to add to Sunfish. For performance, the most important might be a piecelist to save the enumeration of all board squares at every move generation. Other performance optimizations could include dedicated check detection, zobrist hashing and a mutable board representation - perhaps based on bitboards.
-
-The evaluation in Sunfish is not very sophisticated. E.g. we don't distinguish between midgame and endgame. Not much selective deepening is done, no threat detection and the like. Finally Sunfish might benefit from a more advanced move ordering, including such things as killer move and SEE.
-
-Why Sunfish?
-============
-The name Sunfish actually refers to the [Pygmy Sunfish](http://en.wikipedia.org/wiki/Pygmy_sunfish), which is among the very few fish to start with the letters 'Py'. The use of a fish is in the spirit of great engines such as Stockfish, Zappa and Rybka.
-
-In terms of Heritage, Sunfish borrows much more from [Micro-Max by Geert Muller](http://home.hccnet.nl/h.g.muller/max-src2.html) and [PyChess](http://pychess.org).
-
-![Sunfish logo](https://raw.github.com/thomasahle/sunfish/master/logo/sunfish_large.png)
+The depth can be specified with the flag `--depth` (or `-d`) followed by a positive integer. The number of threads can be specified with the flag `--threads` (or `-t`) followed by a positive integer. By default, we have the program run the Serial Minimax at a depth of 3 with, of course, 1 thread. If we wanted to run the program with, for example, the Parallel Top Level Alpha Beta strategy at a depth of 5 with 4 threads, we would run the following command: `python sunfish.py --strategy 5 --depth 5 --threads 4` or `python sunfish.py -s 5 -d 5 -t 4` for short. You can also view the options and their descriptions by running `python sunfish.py -h`. Running this command will return the following descriptions: ![Screen Shot 2015-12-09 at 8.37.08 PM](https://parallelchess.files.wordpress.com/2015/12/screen-shot-2015-12-09-at-8-37-08-pm.png) Once you get the program running, a board will be returned. You (the human) are playing against the computer, and will enter the first move. ![Screen Shot 2015-12-09 at 8.51.14 PM](https://parallelchess.files.wordpress.com/2015/12/screen-shot-2015-12-09-at-8-51-14-pm.png) The move will take the format `e2e4`, where `e4` is the place you want to move the piece at `e2` to. Once you enter a valid move, the program will return a new board with the move you entered applied: ![Screen Shot 2015-12-09 at 9.08.50 PM](https://parallelchess.files.wordpress.com/2015/12/screen-shot-2015-12-09-at-9-08-50-pm.png) The computer will then respond with its move, as well as information on the response, such as the number of board states it explored and the time it took to find an optimal move: ![Screen Shot 2015-12-09 at 9.02.10 PM](https://parallelchess.files.wordpress.com/2015/12/screen-shot-2015-12-09-at-9-02-10-pm.png) You can continue playing the computer until there is a winner. Good luck!
