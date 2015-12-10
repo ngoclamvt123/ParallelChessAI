@@ -24,7 +24,7 @@ from pvsplit import _pvsplit
 import time
 
 # This is the max depth we want our minimax to search
-DEPTH = 5
+DEPTH = 3
 
 # This is the number of threads at which we run our strategy
 NUM_THREADS = 1
@@ -237,8 +237,8 @@ def main():
                         help="Choose: 1 for Serial Minimax, 2 for Parallel Top Level Minimax, 3 for Serial Alpha Beta, 4 for Parallel Bottom Level Alpha Beta, 5 for Parallel Top Level Alpha Beta, 6 for PVSplit. By default, we use Serial Minimax.")
     parser.add_argument("-t", "--threads", type=int, default=1,
                         help="Choose the number of threads to use. By default, we use 1.")
-    parser.add_argument("-d", "--depth", type=int, default=5,
-                        help="Choose the depth at which to search the tree. By default, we use 5.")
+    parser.add_argument("-d", "--depth", type=int, default=3,
+                        help="Choose the depth at which to search the tree. By default, we use 3.")
     args = parser.parse_args()
 
     # Check if serial algorithm chosen
