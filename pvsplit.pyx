@@ -75,7 +75,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		alpha[0] = max(alpha[0], res[0])
 		score[0] = res[0]
 		omp_init_lock(&eval_lock)
-		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
+		for i in prange(move_count, num_threads=num_threads, nogil=True):
 			if i == best_idx:
 				continue
 			temp = alpha_beta_serial(positions[i], 1, depth - 1, alpha[0], beta[0], new_move)
@@ -117,7 +117,7 @@ cdef int pvsplit(Position pos, int agentIndex, int depth, int a, int b, int num_
 		beta[0] = min(beta[0], res[0])
 		score[0] = res[0]
 		omp_init_lock(&eval_lock)
-		for i in prange(move_count, num_threads=num_threads, nogil=True, schedule='guided'):
+		for i in prange(move_count, num_threads=num_threads, nogil=True):
 			if i == best_idx:
 				continue
 			temp = alpha_beta_serial(positions[i], 0, depth - 1, alpha[0], beta[0], new_move)
