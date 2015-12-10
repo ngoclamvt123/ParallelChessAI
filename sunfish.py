@@ -176,7 +176,6 @@ def alpha_beta_top_level_parallel(pos):
     return (score, move, nodes)
 
 def pvsplit(pos):
-    print("PVSplit")
     (score, move) = _pvsplit(pos.numpyify(), 
                         np.array(pos.wc).astype(np.uint8), 
                         np.array(pos.bc).astype(np.uint8), 
@@ -265,6 +264,7 @@ def main():
 
     name, func = strategy_map[args.strategy]
 
+    print()
     print('Analyzing with ' + name + ' at depth ' + str(DEPTH) + ' with ' + str(NUM_THREADS) + ' thread(s)')
 
     pos = Position(initial, 0, (True, True), (True, True), 0, 0)
@@ -292,9 +292,8 @@ def main():
         (score, move, nodes) = func(pos)
         t1 = time.time() - t0
 
-        print("Number of Nodes Explored " + str(nodes))
-        print("Time to move")
-        print(str(t1))
+        print("Number of Nodes Explored: " + str(nodes))
+        print("Time to move: " + str(t1))
         
         # The black player moves from a rotated position, so we have to
         # 'back rotate' the move before printing it.
